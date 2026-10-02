@@ -209,7 +209,18 @@ def search(
 
     base_logits_path: Optional[Path] = None
     if target.quality_metric == "kld":
-        base_logits_path = work_dir / f"{model_info.base_gguf_path.stem}.kld"
+        # The reference logits depend on the base model, the corpus and the
+        # chunk count; key the filename on all three so changing
+        # --ppl-chunks or --quality-corpus never reuses a stale file.
+        # A missing corpus falls back to its path here so the friendly
+        # FiTunaError from generate_base_logits() is what the user sees.
+        corpus_key = (
+            model_fingerprint(wikitext_path) if wikitext_path.exists() else str(wikitext_path)
+        )
+        logits_key = hashlib.sha256(
+            f"{model_fp}:{corpus_key}:{target.ppl_chunks}".encode("utf-8")
+        ).hexdigest()[:12]
+        base_logits_path = work_dir / f"{model_info.base_gguf_path.stem}.{logits_key}.kld"
         if not base_logits_path.exists():
             progress("generating baseline logits for KLD measurement on base GGUF")
             generate_base_logits(

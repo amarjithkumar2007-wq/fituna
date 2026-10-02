@@ -10,6 +10,7 @@ import pytest
 from fituna.config import BinaryPaths, FiTunaError, QualityResult
 from fituna.quality import (
     _parse_kld,
+    _parse_kld_ppl,
     _parse_perplexity,
     compute_kld,
     compute_perplexity,
@@ -39,18 +40,23 @@ def test_parse_perplexity_missing():
     assert _parse_perplexity("No perplexity output here") is None
 
 
+KLD_FIXTURE = Path(__file__).parent / "fixtures" / "llama_perplexity_kld_sample.txt"
+
+
 def test_parse_kld_valid():
-    sample = (
-        "system_info: n_threads = 8\n"
-        "[1]0.0012,[2]0.0024\n"
-        "Final estimate: KLD = 0.002410 +/- 0.000080\n"
-        "Final estimate: PPL = 5.9120 +/- 0.03170\n"
-    )
-    assert _parse_kld(sample) == 0.002410
+    # Captured from llama.cpp b11342: llama-perplexity --kl-divergence on
+    # SmolLM2-135M-Instruct Q4_K_M vs its f16 base, 4 chunks.
+    sample = KLD_FIXTURE.read_text(encoding="utf-8")
+    assert _parse_kld(sample) == 0.052965
+    assert _parse_kld_ppl(sample) == 19.011455
+    # The percentile lines ("Median  KLD", "99.9%   KLD", ...) must not match.
+    assert _parse_kld("Median  KLD:   0.035235\nMaximum KLD:   3.862033\n") is None
 
 
 def test_parse_kld_missing():
     assert _parse_kld("Final estimate: PPL = 5.9070") is None
+    # A "Final estimate: KLD" line is not something llama.cpp prints.
+    assert _parse_kld("Final estimate: KLD = 0.002410 +/- 0.000080") is None
 
 
 def test_compute_perplexity_missing_files(tmp_path):
@@ -159,8 +165,9 @@ def test_compute_kld_success(monkeypatch, tmp_path):
             args=cmd,
             returncode=0,
             stdout=(
-                "Final estimate: KLD = 0.003150 +/- 0.000040\n"
-                "Final estimate: PPL = 6.1200 +/- 0.020\n"
+                "Mean PPL(Q)                   :   6.120000 ±   0.020000\n"
+                "====== KL divergence statistics ======\n"
+                "Mean    KLD:   0.003150 ±   0.000040\n"
             ),
             stderr="",
         )
@@ -201,7 +208,7 @@ def test_compute_kld_unparseable(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    with pytest.raises(FiTunaError, match="could not parse 'Final estimate: KLD ="):
+    with pytest.raises(FiTunaError, match="could not parse 'Mean    KLD:"):
         compute_kld(cand_gguf, wiki, base_logits, bins)
 
 
@@ -270,8 +277,9 @@ def test_compute_kld_scientific_notation(monkeypatch, tmp_path):
             args=cmd,
             returncode=0,
             stdout=(
-                "Final estimate: KLD = 1.25e-04 +/- 0.000010\n"
-                "Final estimate: PPL = 6.1200 +/- 0.020\n"
+                "Mean PPL(Q)                   :   6.120000 ±   0.020000\n"
+                "====== KL divergence statistics ======\n"
+                "Mean    KLD:   1.25e-04 ±   0.000010\n"
             ),
             stderr="",
         )

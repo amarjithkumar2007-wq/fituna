@@ -144,7 +144,10 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="quality_metric",
         help=(
             "quality evaluation metric: 'ppl' (perplexity loss, default) or "
-            "'kld' (KL divergence against baseline model logits)"
+            "'kld' (KL divergence against baseline model logits; writes a "
+            "reference logits file to --out that grows with vocabulary size "
+            "and --ppl-chunks, roughly 100 MB per 4 chunks for a 49k-token "
+            "vocabulary)"
         ),
     )
     run.add_argument("--out", default="./out", help="working/output directory")

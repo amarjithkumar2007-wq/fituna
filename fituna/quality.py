@@ -22,7 +22,16 @@ PPL_TIMEOUT_SEC = 1800
 
 _FLOAT_PATTERN = r"[+\-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+\-]?\d+)?"
 _PPL_RE = re.compile(rf"Final estimate:\s*PPL\s*=\s*({_FLOAT_PATTERN})", re.IGNORECASE)
-_KLD_RE = re.compile(rf"Final estimate:\s*KLD\s*=\s*({_FLOAT_PATTERN})", re.IGNORECASE)
+# `llama-perplexity --kl-divergence` does not print a "Final estimate" line;
+# it prints a statistics block (tools/perplexity/perplexity.cpp):
+#     ====== Perplexity statistics ======
+#     Mean PPL(Q)                   :  19.011455 ±   1.803818
+#     ...
+#     ====== KL divergence statistics ======
+#     Mean    KLD:   0.052965 ±   0.004263
+# See tests/fixtures/llama_perplexity_kld_sample.txt for a captured run.
+_KLD_RE = re.compile(rf"^\s*Mean\s+KLD\s*:\s*({_FLOAT_PATTERN})", re.MULTILINE)
+_KLD_PPL_RE = re.compile(rf"^\s*Mean\s+PPL\(Q\)\s*:\s*({_FLOAT_PATTERN})", re.MULTILINE)
 
 
 def _parse_perplexity(text: str) -> Optional[float]:
@@ -38,13 +47,23 @@ def _parse_perplexity(text: str) -> Optional[float]:
 
 
 def _parse_kld(text: str) -> Optional[float]:
-    """Extract the final KLD value from llama-perplexity's combined
-    stdout/stderr, e.g. a line like:
-        Final estimate: KLD = 0.002410 +/- 0.000080
-        Final estimate: KLD = 1.25e-04 +/- 0.000080
+    """Extract the mean KLD from `llama-perplexity --kl-divergence` output,
+    i.e. the line in the "KL divergence statistics" block:
+        Mean    KLD:   0.052965 ±   0.004263
     Returns None if no such line is present.
     """
     match = _KLD_RE.search(text)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def _parse_kld_ppl(text: str) -> Optional[float]:
+    """Extract the quantized model's perplexity from a --kl-divergence run,
+    which reports it as `Mean PPL(Q) : <value> ± <err>` instead of the
+    "Final estimate: PPL" line a plain perplexity run prints.
+    """
+    match = _KLD_PPL_RE.search(text)
     if match is None:
         return None
     return float(match.group(1))
@@ -237,10 +256,10 @@ def compute_kld(
     if kld is None:
         tail = output.strip()[-2000:]
         raise FiTunaError(
-            f"could not parse 'Final estimate: KLD = ...' from llama-perplexity output "
+            f"could not parse 'Mean    KLD: ...' from llama-perplexity output "
             f"for {quantized_gguf.name}:\n{tail}"
         )
-    ppl = _parse_perplexity(output)
+    ppl = _parse_kld_ppl(output)
     return kld, ppl
 
 
@@ -308,16 +327,19 @@ def _self_check() -> None:
     assert _parse_perplexity("no ppl line here") is None
 
     kld_sample = (
-        "system_info: n_threads = 8\n"
-        "perplexity: calculating perplexity over 655 chunks\n"
-        "[1]0.0012,[2]0.0024,...\n"
-        "Final estimate: KLD = 0.002410 +/- 0.000080\n"
-        "Final estimate: PPL = 5.9120 +/- 0.03170\n"
+        "====== Perplexity statistics ======\n"
+        "Mean PPL(Q)                   :  19.011455 ±   1.803818\n"
+        "Mean PPL(base)                :  18.278568 ±   1.763930\n"
+        "====== KL divergence statistics ======\n"
+        "Mean    KLD:   0.052965 ±   0.004263\n"
+        "Maximum KLD:   3.862033\n"
+        "Median  KLD:   0.035235\n"
     )
-    assert _parse_kld(kld_sample) == 0.002410
+    assert _parse_kld(kld_sample) == 0.052965
+    assert _parse_kld_ppl(kld_sample) == 19.011455
     assert _parse_kld("no kld line here") is None
-    assert _parse_kld("Final estimate: KLD = 1.25e-04 +/- 0.000010") == 0.000125
-    assert _parse_kld("Final estimate: KLD = 3.45E-5 +/- 0.000010") == 3.45e-5
+    assert _parse_kld("Final estimate: KLD = 0.0024") is None
+    assert _parse_kld("Mean    KLD:   1.25e-04 ±   0.000010") == 0.000125
     assert _parse_perplexity("Final estimate: PPL = 6.12e+01 +/- 0.02") == 61.2
 
     # 2. quality_loss_pct arithmetic, mirrored from evaluate_quality's formula.

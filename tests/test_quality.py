@@ -289,3 +289,36 @@ def test_compute_kld_scientific_notation(monkeypatch, tmp_path):
     assert kld == 0.000125
     assert ppl == 6.12
 
+
+
+def test_compute_kld_without_quantized_ppl_is_an_error(monkeypatch, tmp_path):
+    """quality_loss_pct comes from Mean PPL(Q). If it is missing, falling
+    back to the baseline would report 0% loss and pass any quality gate."""
+    bins = _binaries(tmp_path)
+    cand_gguf, wiki, base_logits = tmp_path / "cand.gguf", tmp_path / "wiki.txt", tmp_path / "base.kld"
+    for p in (cand_gguf, wiki, base_logits):
+        p.touch()
+
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+        args=cmd, returncode=0, stdout="Mean    KLD:   0.003150 ±   0.000040\n", stderr=""))
+    with pytest.raises(FiTunaError, match=r"Mean PPL\(Q\)"):
+        compute_kld(cand_gguf, wiki, base_logits, bins)
+
+
+def test_generate_base_logits_failure_leaves_no_logits_file(monkeypatch, tmp_path):
+    """search() reuses the logits file whenever it exists, so an interrupted
+    or failed run must never leave a partial file at the final path."""
+    bins = _binaries(tmp_path)
+    base_gguf, wiki = tmp_path / "base.gguf", tmp_path / "wiki.txt"
+    base_gguf.touch()
+    wiki.touch()
+    logits_path = tmp_path / "base.kld"
+
+    def fake_run(cmd, **kwargs):
+        Path(cmd[cmd.index("--kl-divergence-base") + 1]).write_bytes(b"partial")
+        return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="killed")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(FiTunaError, match="exited with code 1"):
+        generate_base_logits(base_gguf, wiki, logits_path, bins)
+    assert list(tmp_path.glob("base.kld*")) == []

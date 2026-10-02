@@ -344,6 +344,9 @@ is tracked on [GitHub Issues](https://github.com/leeyunseokarchive/fituna/issues
   sub-routine to seed the ngl search
 - **Distributed measurement** — quantize and score quality on a remote
   server, then measure only speed on resource-constrained target devices
+- **Edge devices (Raspberry Pi, Jetson)** — run only `llama-bench` on the
+  device, one candidate at a time, so a board too small for the full search
+  can still be measured ([#56](https://github.com/leeyunseokarchive/fituna/issues/56))
 - **`--launch` and LM Studio preset export** — additional output formats,
   keeping the same artifact boundary as `--export-ollama`
 - **Multi-GPU (`--tensor-split`) search** — lift the single-GPU limitation

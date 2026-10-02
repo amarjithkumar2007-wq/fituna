@@ -66,28 +66,32 @@ monkeypatch합니다.
   `get_llama_cpp_version`, `detect_hardware`, `shutil.disk_usage`,
   `os.access`를 넣습니다.
 
-실제 도구 출력은 fixture `tests/fixtures/llama_bench_sample.json`으로
-보존합니다. 다만 이를 읽는 곳은 `fituna/bench.py`의 자체 `_self_check()`
-(`bench.py:147`)뿐입니다. 2절의 모듈 자체 점검이며 pytest suite는 아닙니다.
-`tests/` 파일에서는 읽지 않습니다. 그래도 parser는 임의로 만든 문자열이 아니라
-llama.cpp가 실제로 출력한 텍스트로 검사되며, 단지 `pytest -q` 밖에서 실행됩니다.
+실제 도구 출력은 fixture로 보존합니다. `tests/fixtures/llama_bench_sample.json`은
+`fituna/bench.py`의 `_self_check()`와 `tests/test_bench.py`가 함께 읽고(#46),
+`tests/fixtures/llama_perplexity_kld_sample.txt`(llama.cpp b11342에서 캡처)는
+`tests/test_quality.py`가 읽습니다(#45). 그래서 이 두 parser는 임의로 만든
+문자열이 아니라 llama.cpp가 실제로 출력한 텍스트로 `pytest -q` 안에서
+검사됩니다. 새 fixture는 실제 실행에서 캡처하고, 어느 llama.cpp 빌드에서
+얻었는지 test에 적어 둡니다.
 
 이 선택에는 분명한 대가가 있습니다. Suite 안의 llama.cpp는 예상한 대로 움직이는
 mock이므로 **FiTuna와 실제 llama.cpp 사이의 통신 오류를 잡을 수 없습니다.**
 0.1.0 변경 이력의 flag·protocol 버그, 곧 `llama-bench`에 `-c`가 없고
 `--version`을 거부하며 CPU 전용 bench가 끝나지 않던 문제는 모두 전체 suite를
-통과했습니다. 이를 보완하는 절차가 6절이며, test를 더 추가하는 대신 별도 단계로
+통과했습니다. #45의 KLD 해석도 같은 경우입니다. mock 출력이 llama.cpp가 실제로
+출력하지 않는 형식이었는데 suite와 CI는 모두 통과했고, 병합 전 실제 llama.cpp로
+실행해서야 발견했습니다. 이후 실제 출력을 fixture로 캡처해 test가 그것을 읽게
+했습니다. 이를 보완하는 절차가 6절이며, test를 더 추가하는 대신 별도 단계로
 둔 이유입니다.
 
 Suite가 잘 다루는 범위는 subprocess 경계 위쪽입니다. 탐색 순서와 조기 종료,
 cache key와 schema migration, 기록된 `nvidia-smi`·`rocm-smi`·
 `system_profiler` 텍스트를 이용한 하드웨어 출력 해석(`test_hardware.py`),
 하드웨어 감지 fallback, 오류 매핑과 종료 코드, 운영체제별 경로 처리를 검사합니다.
-반면 `llama-bench`, `llama-perplexity`, `llama-quantize` 출력 해석은 다루지
-않습니다. `tests/`에는 `test_cache`, `test_cli`, `test_config`,
-`test_corpus`, `test_doctor`, `test_hardware`, `test_quickstart`,
-`test_report`, `test_search`의 아홉 파일이 있지만 `bench.py`, `quality.py`,
-`quantize.py`, `binaries.py`를 직접 실행하지 않습니다. `test_report.py`는
+`llama-bench`와 `llama-perplexity` 출력 해석은 `test_bench.py`와
+`test_quality.py`가 subprocess를 mock한 채 위 fixture로 검사합니다. 반면
+`quantize.py`와 `binaries.py`(`llama-quantize --help`로 지원 양자화 타입을 알아내는
+부분 포함)는 아직 pytest에서 직접 실행하지 않습니다([#10](https://github.com/leeyunseokarchive/fituna/issues/10)). `test_report.py`는
 `report.py`의 순수한 부분인 명령 생성, Modelfile export, rendering만 검사하며
 원래 subprocess를 시작하지 않습니다. `test_cli.py`는
 `search.search()`와 `binaries.locate_binaries()`를 가짜로 바꾼 뒤
@@ -95,8 +99,8 @@ cache key와 schema migration, 기록된 `nvidia-smi`·`rocm-smi`·
 `--export-ollama`와 `report.export_ollama_modelfile()` 사이의 연결 오류 등을
 잡습니다. Subprocess wrapper 중 `model_info.py`만 예외입니다.
 `test_config.py`가 `is_already_quantized` guard를 검사하지만 GGUF header
-해석은 다루지 않습니다. 나머지 parser는 2절의 모듈별 자체 점검으로만 검사하며,
-그중 `bench.py`가 위 fixture를 읽습니다.
+해석은 다루지 않습니다. 나머지 parser(`quantize.py`, `binaries.py`)는 2절의
+모듈별 자체 점검으로만 검사합니다.
 
 ## 4. CI matrix: OS 3개 × Python 2개
 

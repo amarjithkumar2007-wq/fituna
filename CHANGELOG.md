@@ -7,6 +7,20 @@
 
 ## [미출시]
 
+### 추가
+
+- **`fituna run --quality-metric kld`** — 품질 측정에 KL divergence를 선택형으로
+  추가했습니다. F16 모델의 기준 logits를 한 번 만든 뒤 각 양자화 후보와
+  비교하며, 사람용·JSON 보고서에 KLD가 표시됩니다. 기본값(`ppl`)의 동작은
+  바뀌지 않았고, 통과/탈락 판정은 여전히 `--max-quality-loss`(perplexity)로
+  합니다. KLD 기반 판정은 #49에서 추적합니다.
+  ([#45](https://github.com/leeyunseokarchive/fituna/pull/45), @Chirudeva-Reddy)
+- **llama.cpp 출력 해석 테스트** — `tests/test_bench.py`가 llama-bench JSON
+  해석과 실행 명령 생성을 검사합니다
+  ([#46](https://github.com/leeyunseokarchive/fituna/pull/46), @PandaHUN777).
+  `tests/test_quality.py`는 실제 llama.cpp(b11342) 출력을 캡처한 fixture로
+  KLD·PPL 해석을 검사합니다(#45).
+
 ## [0.2.1] — 2026-08-27
 
 ### 변경

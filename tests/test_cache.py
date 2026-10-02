@@ -456,3 +456,21 @@ def test_v2_migration_failure_leaves_old_rows_intact(tmp_path, monkeypatch):
     cache = ResultCache(db)
     assert cache.get_quality("m", "Q4_K_M", ppl_chunks=32, corpus_fp="c").quality_loss_pct == 2.5
     cache.close()
+
+
+def test_v2_migration_failure_does_not_advise_deleting_the_cache(tmp_path, monkeypatch):
+    """A failed migration must not reuse the corrupt-file message, whose
+    advice ("delete it") would throw away the rows the rollback just kept."""
+    db = tmp_path / "v2.sqlite3"
+    _write_v2_quality_cache(db)
+    monkeypatch.setattr("fituna.cache._QUALITY_V2_COLUMNS", "model_fp, no_such_column")
+
+    with pytest.raises(FiTunaError) as excinfo:
+        ResultCache(db)
+    # tmp_path contains this test's name (which says "migration"), so
+    # check for the exact phrase rather than a substring of it.
+    msg = str(excinfo.value)
+    assert "could not migrate the quality cache" in msg
+    assert "unchanged" in msg
+    assert "delete it" not in msg
+    assert str(db) in msg

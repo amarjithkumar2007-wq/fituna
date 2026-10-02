@@ -105,6 +105,7 @@ class ResultCache:
 
     def __init__(self, db_path: Path) -> None:
         db_path = Path(db_path)
+        self._db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         # single connection, no pooling -- this is a local CLI tool,
         # not a server; check_same_thread=False costs nothing since search()
@@ -132,6 +133,9 @@ class ResultCache:
                 self._migrate_quality_add_metric()
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
+        except FiTunaError:
+            self._conn.close()
+            raise
         except sqlite3.DatabaseError as exc:
             # sqlite3.connect() never touches the file -- the first real
             # operation does, and that's where "file is not a database"
@@ -166,6 +170,16 @@ class ResultCache:
             )
             conn.execute("DROP TABLE quality_cache_pre_metric")
             conn.execute("COMMIT")
+        except sqlite3.Error as exc:
+            conn.execute("ROLLBACK")
+            # Not the corrupt-file message: its advice ("delete it") would
+            # throw away the rows the rollback just kept.
+            raise FiTunaError(
+                f"could not migrate the quality cache in {self._db_path} to the "
+                f"current schema ({exc}). The file is unchanged and the next run "
+                "will retry; if this keeps happening, please report it at "
+                "https://github.com/leeyunseokarchive/fituna/issues."
+            ) from exc
         except BaseException:
             conn.execute("ROLLBACK")
             raise

@@ -151,17 +151,24 @@ class ResultCache:
     def _migrate_quality_add_metric(self) -> None:
         """Rebuild a 0.2.x quality_cache with the metric/kld columns, keeping
         every row. SQLite can't alter a primary key in place and metric is
-        part of the key now, so: rename, create, copy, drop.
+        part of the key now, so: rename, create, copy, drop -- in one
+        transaction, so an interruption leaves the old table intact.
         """
         conn = self._conn
-        conn.execute("ALTER TABLE quality_cache RENAME TO quality_cache_pre_metric")
-        conn.execute(_QUALITY_SCHEMA)
-        conn.execute(
-            f"INSERT INTO quality_cache ({_QUALITY_V2_COLUMNS}, metric, kld, created_at) "
-            f"SELECT {_QUALITY_V2_COLUMNS}, 'ppl', NULL, created_at "
-            "FROM quality_cache_pre_metric"
-        )
-        conn.execute("DROP TABLE quality_cache_pre_metric")
+        conn.execute("BEGIN")
+        try:
+            conn.execute("ALTER TABLE quality_cache RENAME TO quality_cache_pre_metric")
+            conn.execute(_QUALITY_SCHEMA)
+            conn.execute(
+                f"INSERT INTO quality_cache ({_QUALITY_V2_COLUMNS}, metric, kld, created_at) "
+                f"SELECT {_QUALITY_V2_COLUMNS}, 'ppl', NULL, created_at "
+                "FROM quality_cache_pre_metric"
+            )
+            conn.execute("DROP TABLE quality_cache_pre_metric")
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
 
     def close(self) -> None:
         self._conn.close()

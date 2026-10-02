@@ -371,3 +371,106 @@ def test_quality_cache_distinguishes_metric(tmp_path):
     assert cache.get_quality("m", "Q4_K_M", metric="kld") == kld_res
     cache.close()
 
+
+
+def _write_v2_quality_cache(db: Path) -> None:
+    """A quality_cache as written by fituna 0.2.x: corpus_fp, no metric/kld."""
+    conn = sqlite3.connect(str(db))
+    conn.executescript(
+        """CREATE TABLE quality_cache (
+               model_fp TEXT NOT NULL, quant TEXT NOT NULL,
+               ppl_chunks INTEGER NOT NULL, corpus_fp TEXT NOT NULL DEFAULT '',
+               perplexity REAL NOT NULL, baseline_perplexity REAL NOT NULL,
+               loss_pct REAL NOT NULL, created_at TEXT NOT NULL,
+               PRIMARY KEY (model_fp, quant, ppl_chunks, corpus_fp));
+           INSERT INTO quality_cache VALUES
+               ('m', '__baseline__', 32, 'c', 6.0, 6.0, 0.0, 't0'),
+               ('m', 'Q4_K_M', 32, 'c', 6.15, 6.0, 2.5, 't1'),
+               ('m', 'Q8_0', -1, 'c', 6.01, 6.0, 0.1667, 't2');"""
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_v2_quality_cache_migrated_not_dropped(tmp_path):
+    """Opening a 0.2.x cache must keep its perplexity rows (#55): they are
+    all ppl measurements, so metric='ppl' and kld=NULL are known values."""
+    db = tmp_path / "v2.sqlite3"
+    _write_v2_quality_cache(db)
+
+    cache = ResultCache(db)
+    q4 = cache.get_quality("m", "Q4_K_M", ppl_chunks=32, corpus_fp="c")
+    assert q4 == QualityResult(
+        candidate_quant="Q4_K_M",
+        perplexity=6.15,
+        baseline_perplexity=6.0,
+        quality_loss_pct=2.5,
+        metric="ppl",
+        kld=None,
+    )
+    assert cache.get_quality("m", "__baseline__", ppl_chunks=32, corpus_fp="c").perplexity == 6.0
+    # The None -> -1 "unlimited chunks" sentinel survives the copy.
+    assert cache.get_quality("m", "Q8_0", ppl_chunks=None, corpus_fp="c").perplexity == 6.01
+    # Migrated rows are ppl rows; they must not be served as KLD results.
+    assert cache.get_quality("m", "Q4_K_M", ppl_chunks=32, corpus_fp="c", metric="kld") is None
+    cache.close()
+
+    conn = sqlite3.connect(str(db))
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "quality_cache_pre_metric" not in tables
+    assert conn.execute("SELECT count(*) FROM quality_cache").fetchone()[0] == 3
+    conn.close()
+
+
+def test_v2_quality_cache_migration_is_idempotent(tmp_path):
+    db = tmp_path / "v2.sqlite3"
+    _write_v2_quality_cache(db)
+    ResultCache(db).close()
+    cache = ResultCache(db)  # second open: already migrated, nothing to do
+    assert cache.get_quality("m", "Q4_K_M", ppl_chunks=32, corpus_fp="c").quality_loss_pct == 2.5
+    cache.close()
+
+
+def test_v2_migration_failure_leaves_old_rows_intact(tmp_path, monkeypatch):
+    """If the copy step fails (disk full, interrupted), the 0.2.x rows must
+    still be in quality_cache afterwards, and a later open must migrate
+    them normally -- never a half-migrated file with the data stranded in a
+    renamed table."""
+    db = tmp_path / "v2.sqlite3"
+    _write_v2_quality_cache(db)
+
+    # Force the INSERT ... SELECT to fail after the rename and create ran.
+    monkeypatch.setattr("fituna.cache._QUALITY_V2_COLUMNS", "model_fp, no_such_column")
+    with pytest.raises(FiTunaError):
+        ResultCache(db)
+
+    conn = sqlite3.connect(str(db))
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "quality_cache_pre_metric" not in tables
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(quality_cache)")}
+    assert "metric" not in cols  # still the untouched 0.2.x table
+    assert conn.execute("SELECT count(*) FROM quality_cache").fetchone()[0] == 3
+    conn.close()
+
+    monkeypatch.undo()
+    cache = ResultCache(db)
+    assert cache.get_quality("m", "Q4_K_M", ppl_chunks=32, corpus_fp="c").quality_loss_pct == 2.5
+    cache.close()
+
+
+def test_v2_migration_failure_does_not_advise_deleting_the_cache(tmp_path, monkeypatch):
+    """A failed migration must not reuse the corrupt-file message, whose
+    advice ("delete it") would throw away the rows the rollback just kept."""
+    db = tmp_path / "v2.sqlite3"
+    _write_v2_quality_cache(db)
+    monkeypatch.setattr("fituna.cache._QUALITY_V2_COLUMNS", "model_fp, no_such_column")
+
+    with pytest.raises(FiTunaError) as excinfo:
+        ResultCache(db)
+    # tmp_path contains this test's name (which says "migration"), so
+    # check for the exact phrase rather than a substring of it.
+    msg = str(excinfo.value)
+    assert "could not migrate the quality cache" in msg
+    assert "unchanged" in msg
+    assert "delete it" not in msg
+    assert str(db) in msg

@@ -44,7 +44,7 @@ from typing import Optional
 
 from fituna.config import BenchResult, CandidateConfig, FiTunaError, QualityResult
 
-_SCHEMA = """
+_BENCH_SCHEMA = """
 CREATE TABLE IF NOT EXISTS bench_cache (
     model_fp TEXT NOT NULL,
     hw_fp TEXT NOT NULL,
@@ -58,7 +58,9 @@ CREATE TABLE IF NOT EXISTS bench_cache (
     created_at TEXT NOT NULL,
     PRIMARY KEY (model_fp, hw_fp, quant, ngl, ctx)
 );
+"""
 
+_QUALITY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS quality_cache (
     model_fp TEXT NOT NULL,
     quant TEXT NOT NULL,
@@ -73,6 +75,15 @@ CREATE TABLE IF NOT EXISTS quality_cache (
     PRIMARY KEY (model_fp, quant, ppl_chunks, corpus_fp, metric)
 );
 """
+
+_SCHEMA = _BENCH_SCHEMA + _QUALITY_SCHEMA
+
+# Columns shared by the 0.2.x quality_cache (corpus_fp, no metric) and the
+# current one, in table order.
+_QUALITY_V2_COLUMNS = (
+    "model_fp, quant, ppl_chunks, corpus_fp, perplexity, "
+    "baseline_perplexity, loss_pct"
+)
 
 # Sentinel stored in quality_cache.ppl_chunks for "no chunk limit" (Python
 # None) -- see the module docstring for why None itself can't be the key.
@@ -94,26 +105,37 @@ class ResultCache:
 
     def __init__(self, db_path: Path) -> None:
         db_path = Path(db_path)
+        self._db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         # single connection, no pooling -- this is a local CLI tool,
         # not a server; check_same_thread=False costs nothing since search()
         # runs sequentially anyway.
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         try:
-            # Pre-corpus_fp cache files have a quality_cache without the
-            # corpus dimension; serving their rows would repeat the exact
-            # stale-measurement bug the column exists to prevent. Drop and
-            # rebuild -- a cache remeasures, it doesn't migrate.
             cols = {
                 row[1]
                 for row in self._conn.execute(
                     "PRAGMA table_info(quality_cache)"
                 ).fetchall()
             }
-            if cols and ("corpus_fp" not in cols or "metric" not in cols):
+            if cols and "corpus_fp" not in cols:
+                # Pre-corpus_fp cache files have a quality_cache without the
+                # corpus dimension; serving their rows would repeat the exact
+                # stale-measurement bug the column exists to prevent. The
+                # missing value is unknowable, so drop and remeasure.
                 self._conn.execute("DROP TABLE quality_cache")
+            elif cols and "metric" not in cols:
+                # 0.2.x cache files predate --quality-metric. Every row in
+                # them was a perplexity measurement, so the missing values
+                # are known (metric='ppl', kld=NULL) and the rows stay valid.
+                # Migrate instead of dropping: remeasuring a multi-GB model
+                # costs hours, and published results trace to these rows.
+                self._migrate_quality_add_metric()
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
+        except FiTunaError:
+            self._conn.close()
+            raise
         except sqlite3.DatabaseError as exc:
             # sqlite3.connect() never touches the file -- the first real
             # operation does, and that's where "file is not a database"
@@ -129,6 +151,38 @@ class ResultCache:
                 "file happens to sit at this path -- delete it and re-run "
                 "(the cache will be rebuilt from scratch)."
             ) from exc
+
+    def _migrate_quality_add_metric(self) -> None:
+        """Rebuild a 0.2.x quality_cache with the metric/kld columns, keeping
+        every row. SQLite can't alter a primary key in place and metric is
+        part of the key now, so: rename, create, copy, drop -- in one
+        transaction, so an interruption leaves the old table intact.
+        """
+        conn = self._conn
+        conn.execute("BEGIN")
+        try:
+            conn.execute("ALTER TABLE quality_cache RENAME TO quality_cache_pre_metric")
+            conn.execute(_QUALITY_SCHEMA)
+            conn.execute(
+                f"INSERT INTO quality_cache ({_QUALITY_V2_COLUMNS}, metric, kld, created_at) "
+                f"SELECT {_QUALITY_V2_COLUMNS}, 'ppl', NULL, created_at "
+                "FROM quality_cache_pre_metric"
+            )
+            conn.execute("DROP TABLE quality_cache_pre_metric")
+            conn.execute("COMMIT")
+        except sqlite3.Error as exc:
+            conn.execute("ROLLBACK")
+            # Not the corrupt-file message: its advice ("delete it") would
+            # throw away the rows the rollback just kept.
+            raise FiTunaError(
+                f"could not migrate the quality cache in {self._db_path} to the "
+                f"current schema ({exc}). The file is unchanged and the next run "
+                "will retry; if this keeps happening, please report it at "
+                "https://github.com/leeyunseokarchive/fituna/issues."
+            ) from exc
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
 
     def close(self) -> None:
         self._conn.close()

@@ -292,6 +292,9 @@ Run 3에서는 코퍼스만 바꿔도 도구의 판정이 바뀌었습니다
 기준 약 12 GB. 파일은 재실행 시 재사용되고 `--quant`로 후보를 좁혀 용량을
 제한할 수 있습니다. 결과는 모델 지문 × 하드웨어 × llama.cpp 빌드 버전을
 키로 sqlite3에 캐시되며, `--resume`은 1초 미만으로 재응답합니다.
+`--quality-metric kld`를 쓰면 F16 모델의 기준 logits 파일도 `--out`에
+저장됩니다. 크기는 어휘 수와 `--ppl-chunks`에 비례합니다(어휘 4.9만 개 모델,
+4청크 기준 약 100 MB).
 
 </details>
 
@@ -344,7 +347,7 @@ FiTuna는 **추천까지만** 합니다. 산출물은 탐색 중에 이미 만�
 - **결과는 실행한 기기에서만 유효** — 사양표로 다른 기기의 결과를 추정하지 않습니다. 다른 기기에 적용할 설정이 필요하면 그 기기에서 FiTuna를 실행하세요(크로스플랫폼 CLI라 그대로 동작합니다). 기기마다 답이 다르다는 것이 실측이 필요한 이유입니다 — [같은 모델, M3 Pro와 T4의 상반된 결과](docs/RESULTS.md#run-4--nvidia-tesla-t4-linux-google-colab)
 - **단일 GPU만 지원** — `--tensor-split` 없음
 - **Windows AMD 자동 감지 불가** — `--gpu amd --vram-mb <N>`으로 수동 지정
-- **품질 = 선택한 코퍼스의 perplexity** — 대리 지표. 실제 작업과 비슷한 텍스트로 측정할 것
+- **품질 = 선택한 코퍼스의 perplexity** — 대리 지표. 실제 작업과 비슷한 텍스트로 측정할 것. `--quality-metric kld`는 보고서에 KL divergence를 추가하지만 통과/탈락 판정은 아직 perplexity 기준 ([#49](https://github.com/leeyunseokarchive/fituna/issues/49))
 - **판정은 `--ppl-chunks`에 의존** — 예산에 가까운 후보는 재측정 후 신뢰 ([측정된 영향](docs/RESULTS.md#how-big-is-a-perplexity-gap-the-error-bar-we-had-been-discarding))
 - **벤치마크는 발열에 민감** — 목표와 몇 tok/s 차이의 판정은 경계선 ([변동성 분석](docs/RESULTS.md#run-to-run-variance-measured-not-hidden))
 - **실기 E2E는 macOS·Linux** — Windows는 단위테스트·CI까지
@@ -355,8 +358,9 @@ FiTuna는 **추천까지만** 합니다. 산출물은 탐색 중에 이미 만�
 [GitHub Issues](https://github.com/leeyunseokarchive/fituna/issues)에서
 추적합니다.
 
-- **KLD 품질 지표 옵션** — perplexity 대리 지표의 보완으로,
-  `llama-perplexity`가 이미 지원하는 KL divergence 측정을 선택형으로 추가
+- **KLD 기반 품질 판정** — `--quality-metric kld`는 현재
+  KL divergence를 보고만 합니다. 다음 단계는 이 값으로 통과/탈락을 판정하는
+  것입니다([#49](https://github.com/leeyunseokarchive/fituna/issues/49))
 - **llama.cpp `--fit` 통합** — 최신 llama.cpp의 메모리 자동 맞춤을 탐색의
   하위 루틴으로 활용해 ngl 초기 후보 선정을 가속
 - **분산 측정 구조** — 원격 서버에서 양자화·품질 평가를 수행하고, 자원이

@@ -273,7 +273,9 @@ The search quantizes every candidate that reaches the quality stage — ~12 GB
 for four candidates of a 4B model. Files are reused across runs; `--quant`
 narrows the candidate set to bound the space. Results are cached in sqlite3
 keyed by model fingerprint × hardware × llama.cpp build version; `--resume`
-re-answers in under a second.
+re-answers in under a second. `--quality-metric kld` also writes a
+reference-logits file from the F16 model to `--out`; it grows with vocabulary
+size and `--ppl-chunks` (about 100 MB for 4 chunks of a 49k-vocabulary model).
 
 </details>
 
@@ -326,7 +328,7 @@ serving the model stays llama.cpp's job
 - **Results are valid only on the machine that ran them** — FiTuna never extrapolates another machine's numbers from a spec sheet. Need a config for a different machine? Run FiTuna there (it's a cross-platform CLI). Machines disagreeing is exactly why measurement beats estimation — [same model, opposite verdicts on M3 Pro vs T4](docs/RESULTS.md#run-4--nvidia-tesla-t4-linux-google-colab)
 - **Single GPU only** — no `--tensor-split`
 - **No Windows AMD auto-detection** — pass `--gpu amd --vram-mb <N>`
-- **Quality = perplexity on the corpus you choose** — a proxy; measure on text resembling your workload
+- **Quality = perplexity on the corpus you choose** — a proxy; measure on text resembling your workload. `--quality-metric kld` adds KL divergence to the report, but the pass/fail gate is still perplexity ([#49](https://github.com/leeyunseokarchive/fituna/issues/49))
 - **Verdicts depend on `--ppl-chunks`** — re-measure candidates close to your budget ([measured effect](docs/RESULTS.md#how-big-is-a-perplexity-gap-the-error-bar-we-had-been-discarding))
 - **Benchmarks are thermally sensitive** — verdicts within a few tok/s of target are marginal ([variance analysis](docs/RESULTS.md#run-to-run-variance-measured-not-hidden))
 - **Real-hardware E2E covers macOS · Linux** — Windows is unit-tested and CI-run
@@ -336,8 +338,8 @@ serving the model stays llama.cpp's job
 Ordered by how directly each item narrows the limitations above. Each item
 is tracked on [GitHub Issues](https://github.com/leeyunseokarchive/fituna/issues).
 
-- **KLD quality metric option** — complement the perplexity proxy with the
-  KL-divergence measurement `llama-perplexity` already supports
+- **KLD as the quality gate** — `--quality-metric kld` now
+  reports KL divergence; next, let it decide pass/fail ([#49](https://github.com/leeyunseokarchive/fituna/issues/49))
 - **llama.cpp `--fit` integration** — use upstream's memory auto-fit as a
   sub-routine to seed the ngl search
 - **Distributed measurement** — quantize and score quality on a remote

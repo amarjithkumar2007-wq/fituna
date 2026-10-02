@@ -7,6 +7,8 @@
 
 ## [미출시]
 
+## [0.3.0] — 2026-10-02
+
 ### 추가
 
 - **`fituna run --quality-metric kld`** — 품질 측정에 KL divergence를 선택형으로
@@ -223,5 +225,7 @@ subprocess 계층을 의도적으로 모의 처리하므로, 실제 llama.cpp �
 - `--wikitext`를 `--quality-corpus`로 바꿨습니다. 이전 이름을 alias로
   유지하므로 호환성을 깨는 변경은 아닙니다.
 
+[0.3.0]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.0
+[0.2.1]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.2.1
 [0.2.0]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.2.0
 [0.1.0]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.1.0

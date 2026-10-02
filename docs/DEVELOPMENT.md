@@ -90,8 +90,9 @@ cache key와 schema migration, 기록된 `nvidia-smi`·`rocm-smi`·
 하드웨어 감지 fallback, 오류 매핑과 종료 코드, 운영체제별 경로 처리를 검사합니다.
 `llama-bench`와 `llama-perplexity` 출력 해석은 `test_bench.py`와
 `test_quality.py`가 subprocess를 mock한 채 위 fixture로 검사합니다. 반면
-`quantize.py`와 `binaries.py`(`llama-quantize --help`로 지원 양자화 타입을 알아내는
-부분 포함)는 아직 pytest에서 직접 실행하지 않습니다([#10](https://github.com/leeyunseokarchive/fituna/issues/10)). `test_report.py`는
+`test_binaries.py`는 합성 출력과 mock subprocess로 버전, 지원 양자화 타입,
+fallback 및 오류 처리를 검사합니다. 실제 llama.cpp 실행 파일은 필요하지 않습니다.
+`quantize.py`는 아직 pytest에서 직접 실행하지 않습니다([#10](https://github.com/leeyunseokarchive/fituna/issues/10)). `test_report.py`는
 `report.py`의 순수한 부분인 명령 생성, Modelfile export, rendering만 검사하며
 원래 subprocess를 시작하지 않습니다. `test_cli.py`는
 `search.search()`와 `binaries.locate_binaries()`를 가짜로 바꾼 뒤
@@ -99,7 +100,7 @@ cache key와 schema migration, 기록된 `nvidia-smi`·`rocm-smi`·
 `--export-ollama`와 `report.export_ollama_modelfile()` 사이의 연결 오류 등을
 잡습니다. Subprocess wrapper 중 `model_info.py`만 예외입니다.
 `test_config.py`가 `is_already_quantized` guard를 검사하지만 GGUF header
-해석은 다루지 않습니다. 나머지 parser(`quantize.py`, `binaries.py`)는 2절의
+해석은 다루지 않습니다. 나머지 parser(`quantize.py`)는 2절의
 모듈별 자체 점검으로만 검사합니다.
 
 ## 4. CI matrix: OS 3개 × Python 2개

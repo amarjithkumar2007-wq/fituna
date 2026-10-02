@@ -39,12 +39,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional
 
-from fituna import binaries, hardware, model_info, report, search
+from fituna import __version__, binaries, hardware, model_info, report, search
 from fituna.cache import ResultCache
 from fituna.config import FiTunaError, NoFeasibleConfigError, TargetSpec
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER_INFO = {"name": "fituna", "version": "0.2.0"}
+SERVER_INFO = {"name": "fituna", "version": __version__}
 _DEFAULT_QUANTS = ("Q8_0", "Q6_K", "Q5_K_M", "Q4_K_M")
 _BASE_GGUF_RE = re.compile(r"(?:^|[-_.])(?:bf16|f16|fp16|f32|fp32)$", re.IGNORECASE)
 

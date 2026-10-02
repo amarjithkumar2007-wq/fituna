@@ -7,8 +7,18 @@
 
 ## [미출시]
 
+## [0.3.1] — 2026-10-02
+
 ### 수정
 
+- **0.3.0이 기존 품질 측정 캐시를 지우던 문제** — 0.3.0은 `metric` 열이 없는
+  0.2.x 캐시를 열면 `quality_cache`를 통째로 삭제했습니다. 0.2.x의 기록은 모두
+  perplexity 측정이라 빠진 값(`metric='ppl'`, `kld` 없음)을 알 수 있으므로, 이제
+  삭제하지 않고 새 형식으로 옮깁니다. 옮기는 작업은 한 transaction 안에서 하므로
+  중간에 실패해도 원래 표가 그대로 남고 다음 실행에서 다시 시도합니다. 실패하면
+  "파일을 지우라"는 손상 파일 안내 대신 원인을 알려 줍니다. `corpus_fp`가 없는 더
+  오래된 캐시는 corpus를 알 수 없으므로 전처럼 다시 측정합니다
+  ([#57](https://github.com/leeyunseokarchive/fituna/pull/57), #55).
 - **llama-bench 속도 값 누락을 0 tok/s로 처리하던 문제** — 생성 측정 기록이나
   `avg_ts`가 없으면 후보를 "느림"으로 탈락시키지 않고 원본 출력과 함께 오류를
   냅니다. 프롬프트 속도는 판정에 쓰이지 않으므로 계속 선택 항목입니다
@@ -232,6 +242,7 @@ subprocess 계층을 의도적으로 모의 처리하므로, 실제 llama.cpp �
 - `--wikitext`를 `--quality-corpus`로 바꿨습니다. 이전 이름을 alias로
   유지하므로 호환성을 깨는 변경은 아닙니다.
 
+[0.3.1]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.1
 [0.3.0]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.0
 [0.2.1]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.2.1
 [0.2.0]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.2.0

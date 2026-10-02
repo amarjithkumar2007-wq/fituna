@@ -127,6 +127,19 @@ Windows를 넣었습니다. 첫 실제 Windows CI 실행은 Windows 경로의 `\
 gate입니다. Package는 `py.typed`를 포함하고 type annotation을 사용하지만 현재
 이를 검사하는 단계는 없습니다 **(계획)**.
 
+### 릴리스
+
+PyPI 배포는 `.github/workflows/release.yml`이 맡습니다. GitHub에서 `vX.Y.Z`
+tag로 release를 publish하면 workflow가 tag와 `fituna.__version__`이 같은지
+확인하고, 테스트를 실행한 뒤 sdist와 wheel을 만들어 PyPI에 올립니다. 인증은
+PyPI Trusted Publishing(OIDC)을 쓰므로 API token을 어디에도 저장하지 않습니다.
+배포 job은 `pypi` environment에서만 실행되고, 이 environment는 `v*` tag에서만
+배포를 허용합니다.
+
+절차: `pyproject.toml`과 `fituna/__init__.py`의 버전을 올리고 CHANGELOG의
+[미출시] 항목을 새 버전 아래로 옮기는 PR을 병합한 뒤, 그 commit에 `vX.Y.Z`
+release를 만듭니다.
+
 ## 5. 브랜치 → pull request → 검토 → 병합
 
 작업은 `main`이 아니라 topic branch(`feat/…`, `fix/…`, `docs/…`,

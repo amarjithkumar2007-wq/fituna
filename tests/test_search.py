@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from fituna.config import (
+    BenchResult,
     BinaryPaths,
     CandidateConfig,
     GPUVendor,
@@ -441,3 +442,70 @@ def test_bench_timeout_treated_as_below_target_not_abort(monkeypatch, tmp_path):
                     _binaries(tmp_path), tmp_path, tmp_path / "wiki.txt")
     assert result.meets_target
     assert result.config.quant == "Q4_K_M"
+
+
+def test_search_with_kld_quality_metric(monkeypatch, tmp_path):
+    """When quality_metric='kld', search() generates baseline logits and passes
+    metric='kld' and base_logits_path to evaluate_quality()."""
+    generated_logits: list[Path] = []
+    evaluated_with_metric: list[str] = []
+
+    _patch(monkeypatch, "quantize", "quantize",
+           lambda base, quant, work, bins, fp: tmp_path / f"m-{quant}.gguf")
+    _patch(monkeypatch, "quality", "compute_perplexity",
+           lambda *a, **k: 6.0)
+
+    def fake_gen_logits(base, wiki, logits_path, bins, chunks=None):
+        generated_logits.append(logits_path)
+        logits_path.touch()
+        return logits_path
+
+    _patch(monkeypatch, "quality", "generate_base_logits", fake_gen_logits)
+
+    def fake_eval_quality(quant, gguf, base_ppl, wiki, bins, chunks=None, metric="ppl", base_logits_path=None):
+        evaluated_with_metric.append(metric)
+        assert base_logits_path is not None
+        assert base_logits_path.exists()
+        return QualityResult(
+            candidate_quant=quant,
+            perplexity=6.1,
+            baseline_perplexity=6.0,
+            quality_loss_pct=1.67,
+            metric=metric,
+            kld=0.003,
+        )
+
+    _patch(monkeypatch, "quality", "evaluate_quality", fake_eval_quality)
+    _patch(monkeypatch, "binaries", "list_supported_quant_types", lambda bins: ["Q4_K_M"])
+    _patch(
+        monkeypatch, "bench", "run_bench",
+        lambda gguf_path, ngl, ctx, target, binaries, timeout_sec=300: BenchResult(
+            candidate=CandidateConfig(quant=_quant_of(gguf_path), ngl=ngl, ctx=ctx),
+            prompt_tok_per_sec=100.0, gen_tok_per_sec=50.0,
+            vram_used_mb=None, raw_stdout="{}",
+        ),
+    )
+
+    target = TargetSpec(
+        model_path=tmp_path / "m.gguf",
+        target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0,
+        ctx=4096,
+        ctx_candidates=[4096],
+        quant_candidates=["Q4_K_M"],
+        quality_metric="kld",
+    )
+    result = search(
+        target,
+        _model_info(tmp_path),
+        _hw(GPUVendor.NONE),
+        _binaries(tmp_path),
+        tmp_path,
+        tmp_path / "wiki.txt",
+    )
+    assert result.meets_target
+    assert len(generated_logits) == 1
+    assert evaluated_with_metric == ["kld"]
+    assert result.quality.metric == "kld"
+    assert result.quality.kld == 0.003
+

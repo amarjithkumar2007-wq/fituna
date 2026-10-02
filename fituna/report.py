@@ -210,11 +210,17 @@ def to_human(result: SearchResult) -> str:
     ]
     if bench.vram_used_mb is not None:
         lines.append(f"  vram used       : {bench.vram_used_mb} MB")
-    lines += [
-        "",
+    quality_lines = [
         f"  perplexity      : {quality.perplexity:.4f} "
         f"(baseline {quality.baseline_perplexity:.4f})",
         f"  quality loss    : {quality.quality_loss_pct:.2f}%",
+    ]
+    if quality.kld is not None:
+        quality_lines.append(f"  kld             : {quality.kld:.6f}")
+
+    lines += [
+        "",
+        *quality_lines,
         "",
         _artifact_line(result.gguf_path),
         "",

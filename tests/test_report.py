@@ -302,3 +302,27 @@ def test_search_result_replace_carries_the_modelfile_path(tmp_path):
     attached = dataclasses.replace(result, modelfile_path=tmp_path / "Modelfile")
     assert attached.modelfile_path == tmp_path / "Modelfile"
     assert attached.run_command == result.run_command
+
+
+def test_human_includes_kld_when_present(tmp_path):
+    gguf = tmp_path / "m.gguf"
+    gguf.touch()
+    res = _result(gguf)
+    res_kld = dataclasses.replace(
+        res,
+        quality=QualityResult(
+            candidate_quant="Q4_K_M",
+            perplexity=6.1,
+            baseline_perplexity=6.0,
+            quality_loss_pct=1.67,
+            metric="kld",
+            kld=0.003412,
+        ),
+    )
+    human = to_human(res_kld)
+    assert "kld             : 0.003412" in human
+
+    payload = json.loads(to_json(res_kld))
+    assert payload["quality"]["metric"] == "kld"
+    assert payload["quality"]["kld"] == 0.003412
+

@@ -252,3 +252,20 @@ def test_help_with_unknown_topic_is_a_usage_error(capsys):
 
     assert rc == 2
     assert "not-a-real-command" in err
+
+
+def test_cli_quality_metric_parsing():
+    parser = cli._build_parser()
+    args_default = parser.parse_args([
+        "run", "--model", "m.gguf", "--target-tps", "20",
+        "--max-quality-loss", "5", "--wikitext", "w.txt",
+    ])
+    assert args_default.quality_metric == "ppl"
+
+    args_kld = parser.parse_args([
+        "run", "--model", "m.gguf", "--target-tps", "20",
+        "--max-quality-loss", "5", "--wikitext", "w.txt",
+        "--quality-metric", "kld",
+    ])
+    assert args_kld.quality_metric == "kld"
+

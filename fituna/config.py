@@ -62,6 +62,7 @@ class TargetSpec:
     # 유한한 값으로 못박는다. 더 엄밀한 평가가 필요하면 명시적으로 None이나
     # 큰 값을 넘기면 된다.
     ppl_chunks: Optional[int] = 32
+    quality_metric: str = "ppl"  # "ppl" | "kld"
 
     def __post_init__(self) -> None:
         # cli.py always builds ctx_candidates with ctx first, but a library
@@ -71,6 +72,10 @@ class TargetSpec:
         if self.ctx not in self.ctx_candidates:
             raise ValueError(
                 f"ctx={self.ctx} must be one of ctx_candidates={self.ctx_candidates}"
+            )
+        if self.quality_metric not in ("ppl", "kld"):
+            raise ValueError(
+                f"quality_metric={self.quality_metric!r} must be 'ppl' or 'kld'"
             )
 
 
@@ -117,6 +122,8 @@ class QualityResult:
     perplexity: float
     baseline_perplexity: float
     quality_loss_pct: float  # (perplexity-baseline)/baseline*100
+    metric: str = "ppl"
+    kld: Optional[float] = None
 
 
 @dataclass(frozen=True)

@@ -341,3 +341,33 @@ def test_old_schema_quality_cache_dropped_not_served(tmp_path):
     cache = ResultCache(db)
     assert cache.get_quality("m", "Q8_0", ppl_chunks=32) is None
     cache.close()
+
+
+def test_quality_cache_distinguishes_metric(tmp_path):
+    """Quality measurements under 'ppl' and 'kld' must be stored independently."""
+    cache = ResultCache(tmp_path / "metric.sqlite3")
+    ppl_res = QualityResult(
+        candidate_quant="Q4_K_M",
+        perplexity=6.1,
+        baseline_perplexity=6.0,
+        quality_loss_pct=1.67,
+        metric="ppl",
+    )
+    kld_res = QualityResult(
+        candidate_quant="Q4_K_M",
+        perplexity=6.1,
+        baseline_perplexity=6.0,
+        quality_loss_pct=1.67,
+        metric="kld",
+        kld=0.00315,
+    )
+
+    cache.put_quality("m", ppl_res)
+    assert cache.get_quality("m", "Q4_K_M", metric="ppl") == ppl_res
+    assert cache.get_quality("m", "Q4_K_M", metric="kld") is None
+
+    cache.put_quality("m", kld_res)
+    assert cache.get_quality("m", "Q4_K_M", metric="ppl") == ppl_res
+    assert cache.get_quality("m", "Q4_K_M", metric="kld") == kld_res
+    cache.close()
+

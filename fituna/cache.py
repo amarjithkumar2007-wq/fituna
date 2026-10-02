@@ -67,8 +67,10 @@ CREATE TABLE IF NOT EXISTS quality_cache (
     perplexity REAL NOT NULL,
     baseline_perplexity REAL NOT NULL,
     loss_pct REAL NOT NULL,
+    metric TEXT NOT NULL DEFAULT 'ppl',
+    kld REAL,
     created_at TEXT NOT NULL,
-    PRIMARY KEY (model_fp, quant, ppl_chunks, corpus_fp)
+    PRIMARY KEY (model_fp, quant, ppl_chunks, corpus_fp, metric)
 );
 """
 
@@ -108,7 +110,7 @@ class ResultCache:
                     "PRAGMA table_info(quality_cache)"
                 ).fetchall()
             }
-            if cols and "corpus_fp" not in cols:
+            if cols and ("corpus_fp" not in cols or "metric" not in cols):
                 self._conn.execute("DROP TABLE quality_cache")
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
@@ -179,21 +181,24 @@ class ResultCache:
         quant: str,
         ppl_chunks: Optional[int] = None,
         corpus_fp: str = "",
+        metric: str = "ppl",
     ) -> Optional[QualityResult]:
         row = self._conn.execute(
-            """SELECT perplexity, baseline_perplexity, loss_pct
+            """SELECT perplexity, baseline_perplexity, loss_pct, metric, kld
                FROM quality_cache
-               WHERE model_fp=? AND quant=? AND ppl_chunks=? AND corpus_fp=?""",
-            (model_fp, quant, _chunks_key(ppl_chunks), corpus_fp),
+               WHERE model_fp=? AND quant=? AND ppl_chunks=? AND corpus_fp=? AND metric=?""",
+            (model_fp, quant, _chunks_key(ppl_chunks), corpus_fp, metric),
         ).fetchone()
         if row is None:
             return None
-        perplexity, baseline_perplexity, loss_pct = row
+        perplexity, baseline_perplexity, loss_pct, metric_val, kld = row
         return QualityResult(
             candidate_quant=quant,
             perplexity=perplexity,
             baseline_perplexity=baseline_perplexity,
             quality_loss_pct=loss_pct,
+            metric=metric_val,
+            kld=kld,
         )
 
     def put_quality(
@@ -206,8 +211,8 @@ class ResultCache:
         self._conn.execute(
             """INSERT OR REPLACE INTO quality_cache
                (model_fp, quant, ppl_chunks, corpus_fp, perplexity,
-                baseline_perplexity, loss_pct, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                baseline_perplexity, loss_pct, metric, kld, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 model_fp,
                 result.candidate_quant,
@@ -216,6 +221,8 @@ class ResultCache:
                 result.perplexity,
                 result.baseline_perplexity,
                 result.quality_loss_pct,
+                result.metric,
+                result.kld,
                 _now(),
             ),
         )

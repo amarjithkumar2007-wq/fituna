@@ -94,3 +94,10 @@ def test_recommend_rejects_invalid_target_before_environment_checks(arguments):
 
     assert response["isError"] is True
     assert "target_tps must be a number" in response["content"][0]["text"]
+
+
+def test_initialize_reports_the_package_version():
+    import fituna
+
+    response = _serve_one({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+    assert response["result"]["serverInfo"]["version"] == fituna.__version__

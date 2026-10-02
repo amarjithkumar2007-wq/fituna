@@ -125,14 +125,17 @@ def test_generate_base_logits_success(monkeypatch, tmp_path):
 
     def fake_run(cmd, **kwargs):
         assert "--kl-divergence-base" in cmd
-        assert str(logits_path) in cmd
-        logits_path.touch()
+        # Written to a temp path beside logits_path, then moved into place.
+        written = Path(cmd[cmd.index("--kl-divergence-base") + 1])
+        assert written.parent == logits_path.parent and written != logits_path
+        written.write_bytes(b"logits")
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     out_path = generate_base_logits(base_gguf, wiki, logits_path, bins, chunks=32)
     assert out_path == logits_path
-    assert logits_path.exists()
+    assert logits_path.read_bytes() == b"logits"
+    assert list(logits_path.parent.glob("base.kld.tmp.*")) == []
 
 
 def test_generate_base_logits_missing_files(tmp_path):

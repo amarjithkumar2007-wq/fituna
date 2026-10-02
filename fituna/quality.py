@@ -8,6 +8,7 @@ of a quantized GGUF relative to the unquantized baseline.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -155,11 +156,18 @@ def generate_base_logits(
         )
 
     logits_path.parent.mkdir(parents=True, exist_ok=True)
+    # Same temp-then-replace scheme as quantize.py: search() reuses the
+    # logits file whenever it exists, so a killed or failed run must never
+    # leave a partial file at logits_path. Stale temps from killed runs can
+    # be GBs (n_vocab x tokens), so clear them first.
+    tmp_path = logits_path.with_name(f"{logits_path.name}.tmp.{os.getpid()}")
+    for stale in logits_path.parent.glob(f"{logits_path.name}.tmp.*"):
+        stale.unlink()
     cmd = [
         str(binaries.llama_perplexity),
         "-m", str(base_gguf_path),
         "-f", str(wikitext_path),
-        "--kl-divergence-base", str(logits_path),
+        "--kl-divergence-base", str(tmp_path),
     ]
     if chunks is not None:
         cmd += ["--chunks", str(chunks)]
@@ -187,11 +195,13 @@ def generate_base_logits(
         ) from exc
 
     output = proc.stdout + "\n" + proc.stderr
-    if proc.returncode != 0:
+    if proc.returncode != 0 or not tmp_path.exists():
+        tmp_path.unlink(missing_ok=True)
         tail = output.strip()[-2000:]
         raise FiTunaError(
             f"llama-perplexity exited with code {proc.returncode} generating logits for {base_gguf_path.name}:\n{tail}"
         )
+    tmp_path.replace(logits_path)
     return logits_path
 
 
@@ -201,9 +211,9 @@ def compute_kld(
     base_logits_path: Path,
     binaries: BinaryPaths,
     chunks: Optional[int] = None,
-) -> tuple[float, Optional[float]]:
+) -> tuple[float, float]:
     """Run `llama-perplexity -m <quantized_gguf> -f <wikitext_path> --kl-divergence-base <base_logits_path> --kl-divergence`
-    and parse the final KLD value (and PPL if present) from stdout/stderr.
+    and parse the mean KLD and the quantized PPL from stdout/stderr.
     Returns (kld, ppl).
     """
     if not quantized_gguf.exists():
@@ -259,7 +269,15 @@ def compute_kld(
             f"could not parse 'Mean    KLD: ...' from llama-perplexity output "
             f"for {quantized_gguf.name}:\n{tail}"
         )
+    # quality_loss_pct is derived from PPL(Q); without it the loss is unknown,
+    # not zero.
     ppl = _parse_kld_ppl(output)
+    if ppl is None:
+        tail = output.strip()[-2000:]
+        raise FiTunaError(
+            f"could not parse 'Mean PPL(Q) : ...' from llama-perplexity output "
+            f"for {quantized_gguf.name}:\n{tail}"
+        )
     return kld, ppl
 
 
@@ -281,10 +299,9 @@ def evaluate_quality(
     if metric == "kld":
         if base_logits_path is None:
             raise FiTunaError("base_logits_path is required when metric is 'kld'")
-        kld, cand_ppl = compute_kld(
+        kld, ppl = compute_kld(
             quantized_gguf, wikitext_path, base_logits_path, binaries, chunks
         )
-        ppl = cand_ppl if cand_ppl is not None else baseline_ppl
         loss_pct = (
             (ppl - baseline_ppl) / baseline_ppl * 100.0 if baseline_ppl > 0 else 0.0
         )

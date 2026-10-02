@@ -17,6 +17,7 @@ out/
 # file never legitimately uses one of these.
 !requirements.txt
 !LICENSE.txt
+!tests/fixtures/*.txt
 .*.tmp
 
 # Python

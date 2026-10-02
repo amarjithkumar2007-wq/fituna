@@ -429,3 +429,30 @@ def test_v2_quality_cache_migration_is_idempotent(tmp_path):
     cache = ResultCache(db)  # second open: already migrated, nothing to do
     assert cache.get_quality("m", "Q4_K_M", ppl_chunks=32, corpus_fp="c").quality_loss_pct == 2.5
     cache.close()
+
+
+def test_v2_migration_failure_leaves_old_rows_intact(tmp_path, monkeypatch):
+    """If the copy step fails (disk full, interrupted), the 0.2.x rows must
+    still be in quality_cache afterwards, and a later open must migrate
+    them normally -- never a half-migrated file with the data stranded in a
+    renamed table."""
+    db = tmp_path / "v2.sqlite3"
+    _write_v2_quality_cache(db)
+
+    # Force the INSERT ... SELECT to fail after the rename and create ran.
+    monkeypatch.setattr("fituna.cache._QUALITY_V2_COLUMNS", "model_fp, no_such_column")
+    with pytest.raises(FiTunaError):
+        ResultCache(db)
+
+    conn = sqlite3.connect(str(db))
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "quality_cache_pre_metric" not in tables
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(quality_cache)")}
+    assert "metric" not in cols  # still the untouched 0.2.x table
+    assert conn.execute("SELECT count(*) FROM quality_cache").fetchone()[0] == 3
+    conn.close()
+
+    monkeypatch.undo()
+    cache = ResultCache(db)
+    assert cache.get_quality("m", "Q4_K_M", ppl_chunks=32, corpus_fp="c").quality_loss_pct == 2.5
+    cache.close()

@@ -110,14 +110,49 @@ def test_parse_output_with_newer_minimal_record_shape() -> None:
     assert result.gen_tok_per_sec == 21.5
 
 
-def test_missing_optional_metrics_default_to_zero() -> None:
+@pytest.mark.parametrize(
+    "records",
+    [
+        [{"n_prompt": 512, "avg_ts": 118.0}],
+        ["ignored", {"n_gen": 0, "avg_ts": 21.5}],
+        [{"n_gen": -128, "avg_ts": 21.5}],
+    ],
+)
+def test_missing_generation_record_raises(records) -> None:
+    stdout = json.dumps(records)
+
+    with pytest.raises(FiTunaError, match="no text-generation test record") as exc:
+        _parse_bench_json(stdout, Path("model.gguf"), ngl=0, ctx=4096)
+
+    assert stdout in str(exc.value)
+
+
+def test_missing_generation_speed_raises() -> None:
     stdout = json.dumps([{"n_prompt": 512}, {"n_gen": 128}])
+
+    with pytest.raises(FiTunaError, match="missing avg_ts") as exc:
+        _parse_bench_json(stdout, Path("model.gguf"), ngl=0, ctx=4096)
+
+    assert stdout in str(exc.value)
+
+
+@pytest.mark.parametrize("prompt_records", [[], [{"n_prompt": 512}]])
+def test_prompt_speed_remains_optional(prompt_records) -> None:
+    stdout = json.dumps(prompt_records + [{"n_gen": 128, "avg_ts": 21.5}])
 
     result = _parse_bench_json(stdout, Path("model.gguf"), ngl=0, ctx=4096)
 
     assert result.prompt_tok_per_sec == 0.0
-    assert result.gen_tok_per_sec == 0.0
+    assert result.gen_tok_per_sec == 21.5
     assert result.vram_used_mb is None
+
+
+def test_measured_zero_generation_speed_is_preserved() -> None:
+    stdout = json.dumps([{"n_gen": 128, "avg_ts": 0.0}])
+
+    result = _parse_bench_json(stdout, Path("model.gguf"), ngl=0, ctx=4096)
+
+    assert result.gen_tok_per_sec == 0.0
 
 
 @pytest.mark.parametrize("stdout", ["not json", '[{"n_prompt": 512'])

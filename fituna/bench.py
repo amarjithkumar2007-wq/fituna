@@ -47,6 +47,8 @@ def _parse_bench_json(stdout: str, gguf_path: Path, ngl: int, ctx: int) -> Bench
     text-generation). Records are told apart by ``n_prompt``/``n_gen`` being
     nonzero rather than by parsing the ``test`` name string (e.g. "pp512"),
     since that label format has changed across llama.cpp releases.
+    A generation record and its ``avg_ts`` are required because generation
+    throughput drives the search verdict. Prompt throughput stays optional.
     """
     try:
         records: Any = json.loads(stdout)
@@ -59,19 +61,30 @@ def _parse_bench_json(stdout: str, gguf_path: Path, ngl: int, ctx: int) -> Bench
         raise FiTunaError(f"llama-bench produced no test records:\n{stdout}")
 
     prompt_ts = 0.0
-    gen_ts = 0.0
+    gen_ts = None
     vram_used_mb = None
     for rec in records:
         if not isinstance(rec, dict):
             continue
-        if rec.get("n_gen", 0):
-            gen_ts = float(rec.get("avg_ts", 0.0))
+        if rec.get("n_gen", 0) > 0:
+            if "avg_ts" not in rec:
+                raise FiTunaError(
+                    f"llama-bench text-generation record is missing avg_ts:\n"
+                    f"--- stdout ---\n{stdout}"
+                )
+            gen_ts = float(rec["avg_ts"])
         elif rec.get("n_prompt", 0):
             prompt_ts = float(rec.get("avg_ts", 0.0))
         # llama-bench does not currently report VRAM usage; the field is
         # kept for a future backend/version that might add it.
         if "vram_used_mb" in rec:
             vram_used_mb = int(rec["vram_used_mb"])
+
+    if gen_ts is None:
+        raise FiTunaError(
+            f"llama-bench produced no text-generation test record:\n"
+            f"--- stdout ---\n{stdout}"
+        )
 
     candidate = CandidateConfig(quant=_quant_from_filename(gguf_path), ngl=ngl, ctx=ctx)
     return BenchResult(

@@ -166,7 +166,7 @@ AI agent가 `cli.py run`과 같은 방식으로 실측 설정을 요청할 수 �
    `binaries.convert_script`로 HF 디렉터리를 `work_dir/base-f16.gguf`로
    변환합니다. 실패하면 `ModelConversionError`를 발생시킵니다. 이어서
    `read_model_info()`가 architecture, layer 수, parameter 수를 읽어
-   `ModelInfo`를 만듭니다. `n_layers`는 `-ngl` 탐색의 상한입니다.
+   `ModelInfo`를 만듭니다. llama.cpp는 출력층을 layer 하나로 더 세므로 `-ngl` 탐색의 상한은 `n_layers + 1`입니다(GPU가 없으면 0).
 5. `search.search()`가 아래 알고리즘을 조율합니다.
    `binaries.BinaryPaths`를 통해 `quantize.quantize()`, `bench.run_bench()`,
    `quality.evaluate_quality()`를 호출합니다. `--resume`을 주면 모든
@@ -204,18 +204,19 @@ Perplexity는 `ngl`이나 `ctx`가 아닌 `quant`에만 의존하므로 품질�
 2단계 — quant별 속도 탐색(최고 품질 우선, 첫 통과가 승자)
   for quant in quality_filtered:
       gguf = quantize(base_gguf, quant)                  # 멱등, 1단계 결과 재사용
-      top  = run_bench(gguf, ngl=n_layers, ctx=target.ctx)
+      max_ngl = 0 if hw.gpu_vendor == NONE else n_layers + 1   # 출력층 포함
+      top  = run_bench(gguf, ngl=max_ngl, ctx=target.ctx)
       if top.gen_tok_per_sec < target_tps:
           continue                        # 조기 종료 B: 다음 저품질 quant로 이동
       if hw.gpu_vendor == NONE:
-          return result(quant, ngl=0, top)                # CPU 전용, ngl 탐색 없음
+          return result(quant, ngl=0, top)                # CPU 전용, ngl=0에서 측정한 그대로
       low = run_bench(gguf, ngl=0, ctx=target.ctx)
       if low.gen_tok_per_sec >= target_tps:
           return result(quant, ngl=0, low)                 # 조기 종료 C: GPU 불필요
-      # target_tps를 만족하는 최소 ngl을 [0, n_layers]에서 이진탐색
+      # target_tps를 만족하는 최소 ngl을 [0, max_ngl]에서 이진탐색
       # gen_tok_per_sec가 ngl에 따라 감소하지 않는다고 가정하며, 최악에는
       # 이미 목표를 만족한다고 확인한 `top`으로 fallback
-      lo, hi, best, calls = 0, n_layers, top, 0
+      lo, hi, best, calls = 0, max_ngl, top, 0
       while lo < hi and calls < target.ngl_max_calls:
           mid = (lo + hi) // 2
           r = run_bench(gguf, ngl=mid, ctx=target.ctx); calls += 1

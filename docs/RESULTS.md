@@ -456,6 +456,12 @@ llama-perplexity -m out/...-3e6680866409-Q6_K.gguf -f kowiki-corpus.txt --chunks
   이진탐색은 더 작은 값이 목표를 만족하지 못해 전체 48을 반환했습니다. Q4_K_M의
   실측 offload curve는 다음과 같습니다.
 
+  > **정정(0.3.2).** 이 실행 당시 FiTuna는 `-ngl 48`(block 수)을 full offload로
+  > 보았습니다. llama.cpp는 출력층을 layer 하나로 더 세므로 실제 full offload는
+  > `-ngl 49`이고, `-ngl 48`에서는 layer 하나가 CPU에 남습니다. SmolLM2-135M(block 30)에서
+  > `-ngl 30`은 "offloaded 30/31 layers"로 233~240 tok/s, `-ngl 31`은 258~262 tok/s를
+  > 기록했습니다. 아래 curve는 48까지의 실측이며, 0.3.2부터 상한은 `n_layers + 1`입니다.
+
   | ngl | 0 | 24 | 36 | 42 | 45 | 47 | 48 |
   |---|---|---|---|---|---|---|---|
   | gen tok/s | timeout | 10.86 | 17.56 | 23.53 ⚠ | 32.43 | **39.32** | **44.62** |

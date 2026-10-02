@@ -7,6 +7,20 @@
 
 ## [미출시]
 
+### 수정
+
+- **full offload 측정에서 layer 하나가 CPU에 남던 문제** — llama.cpp는 출력층을
+  layer 하나로 더 세므로 full offload는 `-ngl <block 수 + 1>`입니다. 이전에는
+  `-ngl <block 수>`를 상한으로 써서 layer 하나가 CPU에 남았고, 목표를 full
+  offload에서만 넘는 quant가 조기 종료 B로 탈락할 수 있었습니다. SmolLM2-135M
+  (block 30, Metal)에서 `-ngl 30`은 233~240 tok/s, `-ngl 31`은 258~262 tok/s였습니다.
+  이제 상한과 이진탐색 범위가 `n_layers + 1`입니다.
+- **GPU가 없는 하드웨어에서 측정과 추천 명령이 어긋나던 문제** — GPU가 없으면
+  `-ngl <block 수>`로 측정한 뒤 결과에 `ngl=0`만 붙였습니다. GPU 백엔드가 있는
+  llama.cpp 빌드에서는 그 측정이 GPU에서 돌아, `--gpu none`이나 GPU 자동 감지
+  실패(#44) 때 GPU 속도를 CPU 실행 명령에 붙여 보고했습니다. 이제 추천하는
+  `-ngl 0` 그대로 측정합니다.
+
 ## [0.3.1] — 2026-10-02
 
 ### 수정

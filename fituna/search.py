@@ -16,13 +16,15 @@ Stage 1 -- quality pre-filter (one ``llama-perplexity`` call per quant):
     (early-exit A) -- they never reach the benchmarking stage.
 
 Stage 2 -- speed search, walking quants in quality-descending order:
-    - top = bench at ngl=n_layers (max offload). If even that misses the
-      target throughput, this quant can't work at any ngl -- skip to the
-      next, lower-quality (often faster) quant (early-exit B).
+    - top = bench at ngl=n_layers+1 (full offload: llama.cpp counts the
+      output layer as one more layer), or at ngl=0 on no-GPU hardware. If
+      even that misses the target throughput, this quant can't work at any
+      ngl -- skip to the next, lower-quality (often faster) quant
+      (early-exit B).
     - if hardware has a GPU, low = bench at ngl=0. If that alone already
       meets the target, no GPU offload is needed -- adopt it immediately
       (early-exit C), skipping the binary search entirely.
-    - otherwise binary-search the minimal ngl in [0, n_layers] that meets
+    - otherwise binary-search the minimal ngl in [0, n_layers+1] that meets
       the target (<= ngl_max_calls calls), assuming gen_tok_per_sec is
       monotonically non-decreasing in ngl (documented assumption; the worst
       case if it's violated is simply falling back to the already-known-good
@@ -102,18 +104,6 @@ def _hardware_fingerprint(hw: HardwareProfile, llama_version: Optional[str]) -> 
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _with_ngl(bench: BenchResult, ngl: int) -> BenchResult:
-    """Relabel a BenchResult's candidate.ngl without re-benchmarking.
-
-    Used for CPU-only hardware, where ``-ngl`` is a no-op: the full-offload
-    bench (`top`, run at ngl=n_layers) is functionally identical to ngl=0, so
-    we just relabel it instead of paying for a redundant subprocess call.
-    """
-    if bench.candidate.ngl == ngl:
-        return bench
-    return replace(bench, candidate=replace(bench.candidate, ngl=ngl))
-
-
 def search(
     target: TargetSpec,
     model_info: ModelInfo,
@@ -150,6 +140,14 @@ def search(
     # ctx_candidates are re-verified at the winning ngl but never recorded
     # as the chosen CandidateConfig.ctx.
     other_ctxs = [c for c in dict.fromkeys(target.ctx_candidates) if c != target.ctx]
+
+    # Offload ceiling. llama.cpp counts the output layer as one more layer:
+    # -ngl n_layers leaves one layer on the CPU ("offloaded 30/31 layers"), and
+    # n_layers + 1 is full offload (larger values are clamped). With no GPU
+    # the ceiling is 0, the -ngl the result will recommend: a GPU build of
+    # llama.cpp still offloads at -ngl n, so benching there would measure a
+    # GPU speed for a command that runs on the CPU.
+    max_ngl = 0 if hw.gpu_vendor == GPUVendor.NONE else model_info.n_layers + 1
 
     # Filter quant_candidates down to what this llama-quantize build actually
     # supports. Introspection failures are non-fatal -- fall back to trusting
@@ -377,15 +375,8 @@ def search(
             return True
 
         # --- Stage 2: speed search -------------------------------------------
-        progress(f"[{quant}] bench full-offload (ngl={model_info.n_layers})")
-        top = cached_bench(model_info.n_layers, target.ctx)
-        if hw.gpu_vendor == GPUVendor.NONE:
-            # No GPU: -ngl is a no-op, so the full-offload bench is
-            # functionally identical to ngl=0. Relabel *before* recording it
-            # as a best-effort/final candidate, so a best-effort fallback (or
-            # a later NoFeasibleConfigError.closest) never misreports this
-            # quant's ngl as n_layers.
-            top = _with_ngl(top, 0)
+        progress(f"[{quant}] bench full-offload (ngl={max_ngl})")
+        top = cached_bench(max_ngl, target.ctx)
         consider_best_effort(top)
 
         if top.gen_tok_per_sec < target.target_tokens_per_sec:
@@ -400,8 +391,7 @@ def search(
             break
 
         if hw.gpu_vendor == GPUVendor.NONE:
-            # No GPU: ngl search doesn't apply, reuse the already-relabeled
-            # `top` bench (ngl=0) directly.
+            # No GPU: ngl search doesn't apply; `top` already ran at ngl=0.
             if verify_other_ctx(0):
                 return build_result(top)
             continue
@@ -418,8 +408,8 @@ def search(
             timed_out = True
             break
 
-        # Binary search the minimal ngl in [0, n_layers] meeting the target.
-        lo, hi = 0, model_info.n_layers
+        # Binary search the minimal ngl in [0, max_ngl] meeting the target.
+        lo, hi = 0, max_ngl
         best = top  # already known to satisfy the target
         calls = 0
         while lo < hi and calls < target.ngl_max_calls and time_left():

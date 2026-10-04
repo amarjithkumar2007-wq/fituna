@@ -148,7 +148,7 @@ def test_search_early_exits_on_first_hit(monkeypatch, tmp_path):
 
     # Never speed-tested the lower tiers.
     assert all(q == "Q8_0" for q, _ in bench_calls)
-    # ngl binary search stayed within its call budget (n_layers/0 probes plus
+    # ngl binary search stayed within its call budget (n_layers+1/0 probes plus
     # the bisection itself).
     assert len(bench_calls) <= 2 + target.ngl_max_calls
 
@@ -196,7 +196,7 @@ def test_search_raises_with_closest_when_no_candidate_meets_target(monkeypatch, 
         quant = _quant_of(gguf_path)
         # Only the full-offload ceiling should ever be probed for a quant
         # tier that fails it -- no ngl=0 check, no bisection.
-        assert ngl == n_layers, (
+        assert ngl == n_layers + 1, (
             f"quant {quant!r} was probed at ngl={ngl} but its full-offload "
             "ceiling already misses the target; no further probing needed"
         )
@@ -256,10 +256,10 @@ def test_search_skips_binary_search_when_cpu_only_already_meets_target(monkeypat
 
     def fake_run_bench(gguf_path, ngl, ctx, target, binaries, timeout_sec=300):
         bench_calls.append(ngl)
-        # Both the full-offload ceiling (n_layers) and CPU-only (0) already
+        # Both the full-offload ceiling (n_layers + 1) and CPU-only (0) already
         # clear the target -- any other ngl value means the binary search
         # ran when it should have been skipped.
-        assert ngl in (0, n_layers), f"unexpected bisection probe at ngl={ngl}"
+        assert ngl in (0, n_layers + 1), f"unexpected bisection probe at ngl={ngl}"
         cand = CandidateConfig(quant="Q4_K_M", ngl=ngl, ctx=ctx)
         from fituna.config import BenchResult
         return BenchResult(candidate=cand, prompt_tok_per_sec=100.0, gen_tok_per_sec=25.0,
@@ -277,7 +277,7 @@ def test_search_skips_binary_search_when_cpu_only_already_meets_target(monkeypat
 
     assert result.meets_target is True
     assert result.config.ngl == 0, "CPU-only already meets target; must not over-allocate GPU"
-    assert sorted(bench_calls) == [0, n_layers], "must not bisect once ngl=0 already passes"
+    assert sorted(bench_calls) == [0, n_layers + 1], "must not bisect once ngl=0 already passes"
 
 
 def test_search_raises_when_every_quant_fails_the_quality_gate(monkeypatch, tmp_path):
@@ -509,3 +509,73 @@ def test_search_with_kld_quality_metric(monkeypatch, tmp_path):
     assert result.quality.metric == "kld"
     assert result.quality.kld == 0.003
 
+
+
+def _patch_flat_quality(monkeypatch, quant_loss: float = 2.0) -> None:
+    def fake_quantize(base_gguf, quant, out_dir, binaries, model_fp):
+        return out_dir / f"model-{quant}.gguf"
+
+    def fake_compute_perplexity(gguf_path, wikitext_path, binaries, chunks=None):
+        return 6.0
+
+    def fake_evaluate_quality(quant, quantized_gguf, baseline_ppl, wikitext_path, binaries, chunks=None):
+        return QualityResult(candidate_quant=quant, perplexity=baseline_ppl * (1 + quant_loss / 100),
+                              baseline_perplexity=baseline_ppl, quality_loss_pct=quant_loss)
+
+    _patch(monkeypatch, "quantize", "quantize", fake_quantize)
+    _patch(monkeypatch, "quality", "compute_perplexity", fake_compute_perplexity)
+    _patch(monkeypatch, "quality", "evaluate_quality", fake_evaluate_quality)
+
+
+def test_full_offload_includes_the_output_layer(monkeypatch, tmp_path):
+    """llama.cpp counts the output layer as one more layer: -ngl n_layers
+    leaves one layer on the CPU, -ngl n_layers+1 is full offload. A target that only
+    full offload reaches must be found, not rejected by early-exit B."""
+    n_layers = 8
+    target = TargetSpec(model_path=tmp_path / "model.gguf", target_tokens_per_sec=20.0,
+                        max_quality_loss_pct=5.0, quant_candidates=("Q4_K_M",))
+    probed: list[int] = []
+
+    def fake_run_bench(gguf_path, ngl, ctx, target, binaries, timeout_sec=300):
+        probed.append(ngl)
+        speed = 25.0 if ngl >= n_layers + 1 else 15.0
+        return BenchResult(candidate=CandidateConfig(quant="Q4_K_M", ngl=ngl, ctx=ctx),
+                           prompt_tok_per_sec=100.0, gen_tok_per_sec=speed,
+                           vram_used_mb=None, raw_stdout="{}")
+
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "bench", "run_bench", fake_run_bench)
+
+    result = search(target=target, model_info=_model_info(tmp_path, n_layers=n_layers),
+                    hw=_hw(GPUVendor.NVIDIA), binaries=_binaries(tmp_path),
+                    work_dir=tmp_path, wikitext_path=tmp_path / "wiki.txt")
+
+    assert probed[0] == n_layers + 1
+    assert result.meets_target is True
+    assert result.config.ngl == n_layers + 1
+
+
+def test_no_gpu_search_benches_the_config_it_recommends(monkeypatch, tmp_path):
+    """With no GPU in the profile the recommendation is -ngl 0, so the bench
+    must run at -ngl 0 too. A GPU build of llama.cpp would otherwise measure
+    a GPU speed for a command that runs on the CPU."""
+    target = TargetSpec(model_path=tmp_path / "model.gguf", target_tokens_per_sec=20.0,
+                        max_quality_loss_pct=5.0, quant_candidates=("Q4_K_M",))
+    probed: list[int] = []
+
+    def fake_run_bench(gguf_path, ngl, ctx, target, binaries, timeout_sec=300):
+        probed.append(ngl)
+        return BenchResult(candidate=CandidateConfig(quant="Q4_K_M", ngl=ngl, ctx=ctx),
+                           prompt_tok_per_sec=100.0, gen_tok_per_sec=25.0,
+                           vram_used_mb=None, raw_stdout="{}")
+
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "bench", "run_bench", fake_run_bench)
+
+    result = search(target=target, model_info=_model_info(tmp_path),
+                    hw=_hw(GPUVendor.NONE), binaries=_binaries(tmp_path),
+                    work_dir=tmp_path, wikitext_path=tmp_path / "wiki.txt")
+
+    assert probed == [0]
+    assert result.config.ngl == 0
+    assert result.bench.candidate.ngl == 0

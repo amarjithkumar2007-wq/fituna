@@ -7,6 +7,8 @@
 
 ## [미출시]
 
+## [0.3.3] — 2026-10-05
+
 ### 추가
 
 - **`fituna --version` / `-V`** — 설치된 버전을 출력합니다.
@@ -310,6 +312,8 @@ subprocess 계층을 의도적으로 모의 처리하므로, 실제 llama.cpp �
   저장소 상태와 맞추고 라이선스 준수 기록의 오래된 수치도 고쳤습니다.
 - `--wikitext`를 `--quality-corpus`로 바꿨습니다. 이전 이름을 alias로
   유지하므로 호환성을 깨는 변경은 아닙니다.
+
+[0.3.3]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.3
 
 [0.3.2]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.2
 [0.3.1]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.1

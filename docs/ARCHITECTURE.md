@@ -197,6 +197,9 @@ Perplexity는 `ngl`이나 `ctx`가 아닌 `quant`에만 의존하므로 품질�
   for quant in quant_candidates ∩ list_supported_quant_types():
       gguf = quantize(base_gguf, quant)
       q = evaluate_quality(quant, gguf, baseline_ppl, wikitext_path)
+          # --quality-metric kld: F16 기준 logits를 한 번 만들어 두고(파일 재사용),
+          # 같은 호출에서 KLD와 PPL(Q)를 함께 읽음. KLD는 보고용이고
+          # quality_loss_pct는 PPL(Q)에서 계산(#49). PPL(Q)가 없으면 FiTunaError
       q.quality_loss_pct <= max_quality_loss_pct이면 quant 유지
   quality_filtered = 통과한 quant를 원래 품질 내림차순(Q8_0 → Q2_K),
                       곧 최고 품질 우선으로 정렬
@@ -251,6 +254,8 @@ len(ctx_candidates))`입니다. `fituna/config.py`의 `TargetSpec` 기본값에�
 <work_dir>/
 ├── base-f16.gguf            # model_info.ensure_base_gguf() — HF 디렉터리 입력일 때만
 ├── <model>-<fp12>-<quant>.gguf  # quantize.quantize() — 시도한 quant별 1개, 있으면 재사용
+├── <base>.<key12>.kld       # quality.generate_base_logits() — --quality-metric kld에서만, temp→replace
+│                            #   key = sha256(model_fp:corpus:ppl_chunks), 바뀌면 새로 생성
 ├── Modelfile                # report.export_ollama_modelfile() — --export-ollama에서만, atomic
 └── .fituna_cache.sqlite3    # cache.ResultCache — bench_cache / quality_cache, --resume에서만
 ```

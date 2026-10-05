@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fituna"
-version = "0.3.1"
+version = "0.3.2"
 description = "Hardware-aware auto-tuner that finds the smallest llama.cpp GGUF quantization + runtime config meeting a target throughput and quality-loss budget."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -7,6 +7,8 @@
 
 ## [미출시]
 
+## [0.3.2] — 2026-10-05
+
 ### 수정
 
 - **full offload 측정에서 layer 하나가 CPU에 남던 문제** — llama.cpp는 출력층을
@@ -14,23 +16,30 @@
   `-ngl <block 수>`를 상한으로 써서 layer 하나가 CPU에 남았고, 목표를 full
   offload에서만 넘는 quant가 조기 종료 B로 탈락할 수 있었습니다. SmolLM2-135M
   (block 30, Metal)에서 `-ngl 30`은 233~240 tok/s, `-ngl 31`은 258~262 tok/s였습니다.
-  이제 상한과 이진탐색 범위가 `n_layers + 1`입니다.
+  이제 상한과 이진탐색 범위가 `n_layers + 1`입니다([#59](https://github.com/leeyunseokarchive/fituna/pull/59)).
 - **GPU가 없는 하드웨어에서 측정과 추천 명령이 어긋나던 문제** — GPU가 없으면
   `-ngl <block 수>`로 측정한 뒤 결과에 `ngl=0`만 붙였습니다. GPU 백엔드가 있는
   llama.cpp 빌드에서는 그 측정이 GPU에서 돌아, `--gpu none`이나 GPU 자동 감지
   실패(#44) 때 GPU 속도를 CPU 실행 명령에 붙여 보고했습니다. 이제 추천하는
-  `-ngl 0` 그대로 측정합니다.
+  `-ngl 0` 그대로 측정합니다([#59](https://github.com/leeyunseokarchive/fituna/pull/59)).
 - **KLD 모드에서 PPL(Q)를 읽지 못하면 품질 손실이 0%로 기록되던 문제** —
   `--quality-metric kld`의 품질 손실은 `Mean PPL(Q)`에서 계산합니다. 이 값이
   없으면 baseline으로 대신해 손실 0%가 되었고 어떤 품질 상한도 통과했습니다.
-  이제 원본 출력과 함께 오류를 냅니다.
+  이제 원본 출력과 함께 오류를 냅니다([#60](https://github.com/leeyunseokarchive/fituna/pull/60)).
 - **KLD 기준 logits 파일이 중단 후 잘린 채 재사용될 수 있던 문제** — 기준
   logits는 파일이 있으면 다시 만들지 않습니다. 생성 도중 중단되거나 실패하면
   잘린 파일이 남아 다음 실행이 그대로 썼습니다. 이제 `quantize`와 같이 임시
   파일에 쓴 뒤 성공했을 때만 제자리로 옮기고, 남은 임시 파일은 다음 실행에서
-  지웁니다.
+  지웁니다([#60](https://github.com/leeyunseokarchive/fituna/pull/60)).
 - **MCP 서버가 버전을 0.2.0으로 보고하던 문제** — `initialize` 응답의
-  `serverInfo.version`이 고정 문자열이었습니다. 이제 `fituna.__version__`을 씁니다.
+  `serverInfo.version`이 고정 문자열이었습니다. 이제 `fituna.__version__`을 씁니다
+  ([#61](https://github.com/leeyunseokarchive/fituna/pull/61)).
+
+### 추가
+
+- **llama.cpp 실행 파일 탐색 테스트** — `tests/test_binaries.py`가 버전 출력,
+  지원 양자화 타입 목록, fallback, 실행 파일이 없을 때의 오류를 mock subprocess로
+  검사합니다([#62](https://github.com/leeyunseokarchive/fituna/pull/62), @GreedyC, #10 일부).
 
 ## [0.3.1] — 2026-10-02
 
@@ -267,6 +276,7 @@ subprocess 계층을 의도적으로 모의 처리하므로, 실제 llama.cpp �
 - `--wikitext`를 `--quality-corpus`로 바꿨습니다. 이전 이름을 alias로
   유지하므로 호환성을 깨는 변경은 아닙니다.
 
+[0.3.2]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.2
 [0.3.1]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.1
 [0.3.0]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.0
 [0.2.1]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.2.1

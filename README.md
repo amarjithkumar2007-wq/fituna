@@ -243,7 +243,7 @@ below. Full options for each: `fituna <command> -h`.
 |---|---|
 | `fituna quickstart` | Six-step interactive wizard — environment check through search; shows the assembled `fituna run` command before executing it |
 | `fituna run` | The search itself. `--model <F16.gguf>` or `--hf repo[:file]` (auto-download from HF), `--json` supported |
-| `fituna doctor` | 9 environment checks, each failure with its fix |
+| `fituna doctor` | 11 environment checks (binaries actually run, build can use your GPU), each failure with its fix |
 | `fituna fetch-corpus` | Download a quality corpus (`--lang en/ko`, stdlib-only) |
 | `fituna detect-hw` | Show detected GPU · VRAM · CPU · RAM |
 | `fituna-mcp` | MCP server for AI agents (below) |

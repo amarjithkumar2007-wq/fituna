@@ -10,6 +10,13 @@
 ### 추가
 
 - **`fituna --version` / `-V`** — 설치된 버전을 출력합니다.
+- **`fituna doctor` 점검 강화 (9개 → 11개)**
+  - 바이너리를 경로로만 찾지 않고 실제로 실행해 봅니다. dylib 누락(`Library not loaded`)이나
+    macOS 격리로 실행되지 않는 바이너리가 이전에는 `PASS`였습니다.
+  - `gpu-backend`: `llama-bench --list-devices`로 빌드가 GPU를 쓸 수 있는지 확인합니다. GPU가
+    있는데 CPU 전용 빌드면 `-ngl`이 효과가 없고 모든 측정이 CPU 속도가 되므로 `WARN`을 냅니다.
+  - `llama-server`: 결과 화면이 첫 번째로 안내하는 실행 방법이라 함께 확인합니다.
+  - 마지막 줄에 다음 단계를 안내합니다(실패가 있으면 먼저 고칠 항목, 없으면 `fituna quickstart`).
 
 ### 수정
 

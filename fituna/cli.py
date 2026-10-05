@@ -174,7 +174,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     doc = sub.add_parser(
         "doctor",
-        help="diagnose the environment: Python version, llama.cpp binaries/version, "
+        help="diagnose the environment: Python version, llama.cpp binaries (found "
+        "and actually runnable)/version, whether the build can use your GPU, "
         "hardware detection, output directory writability, and free disk space",
     )
     doc.add_argument("--llama-bin-dir", default=None, dest="llama_bin_dir")

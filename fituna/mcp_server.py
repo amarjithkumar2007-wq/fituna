@@ -62,9 +62,10 @@ _TOOLS: list[dict[str, Any]] = [
     {
         "name": "fituna_recommend",
         "description": (
-            "Find the smallest llama.cpp config (quantization level, GPU "
-            "offload layers, context length) that meets a target generation "
-            "speed within a quality-loss budget -- by actually benchmarking "
+            "Find the llama.cpp config (quantization level, GPU offload "
+            "layers, context length) that meets a target generation speed "
+            "within a quality-loss budget -- the highest-quality quant that "
+            "passes, with the fewest GPU layers it needs -- by actually benchmarking "
             "on this machine, not by guessing from specs. Slow on first run "
             "(minutes: it quantizes and benchmarks real candidates); "
             "near-instant on repeat runs thanks to the result cache. "

@@ -9,9 +9,10 @@
 **Stop guessing your llama.cpp config. Measure it.**
 
 Give it a model file, a target speed (tok/s) and a quality budget (%), and
-it finds the lightest llama.cpp configuration — the combination of
-quantization level, GPU offload and context length — that actually hits
-those numbers on your machine, proven by real benchmarks.
+it finds the llama.cpp configuration — quantization level, GPU offload and
+context length — that actually hits those numbers on your machine: the
+highest-quality quant that reaches your speed, with the fewest GPU layers
+it needs, proven by real benchmarks.
 
 **`pip install fituna`**
 
@@ -37,13 +38,13 @@ to allow. That's dozens of combinations, and today most people search them by
 trial and error.
 
 What you actually want answered are three questions. **① Will this machine
-hit my target speed? ② What is the quality loss, in percent? ③ What is the
-lightest config that still meets the target?** — and no tool answered them:
+hit my target speed? ② What is the quality loss, in percent? ③ Which config
+keeps the most quality while still meeting the target?** — and no tool answered them:
 
-| | ① Target speed | ② Quality loss | ③ Minimal config |
+| | ① Target speed | ② Quality loss | ③ Best passing config |
 |---|---|---|---|
 | VRAM calculators | Only "does it fit" | Not addressed | Not addressed |
-| Chatbot advice | Can propose a config; no repeated-measurement guarantee | General trends | No minimal-pass guarantee |
+| Chatbot advice | Can propose a config; no repeated-measurement guarantee | General trends | No passing guarantee |
 | NVIDIA AutoQuantize | No speed-target input | Addressed — but CUDA-only | CUDA-only |
 | **FiTuna** | **Measured verdict** | **Measured verdict** | **Binary-searched** |
 

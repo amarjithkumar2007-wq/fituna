@@ -74,9 +74,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fituna",
         description=(
-            "Find the smallest llama.cpp quantization + runtime config "
-            "(quant, -ngl, ctx) that meets a target throughput within a "
-            "quality-loss budget, by benchmarking on your actual hardware."
+            "Find the highest-quality llama.cpp quantization that meets a "
+            "target throughput within a quality-loss budget, with the fewest "
+            "GPU layers (-ngl) it needs, by benchmarking on your actual hardware."
         ),
     )
     parser.add_argument(
@@ -370,8 +370,8 @@ def _cmd_fetch_corpus(args: argparse.Namespace) -> int:
 # most sessions actually need, in the order a first-time user hits them).
 _HELP_PAGE = """\
 FiTuna -- llama.cpp 양자화 설정을 실측으로 찾는 CLI
-Find the smallest llama.cpp quant + runtime config that meets your target,
-measured on your actual hardware.
+Find the highest-quality llama.cpp quant that meets your target, with the
+fewest GPU layers it needs -- measured on your actual hardware.
 
 처음이라면 (getting started):
   fituna quickstart      대화형 마법사 -- 전 과정을 안내

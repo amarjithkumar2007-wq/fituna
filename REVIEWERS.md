@@ -40,7 +40,7 @@ FiTuna는 로컬 LLM(llama.cpp)을 돌릴 때 **어떤 양자화 레벨(quant)�
 |---|---|
 | **입력** | F16 GGUF 모델 파일(로컬 경로 또는 `--hf`로 HuggingFace 저장소 지정), 목표 생성속도(tok/s), 허용 품질저하(%), 컨텍스트 길이, 품질 측정용 텍스트 코퍼스 |
 | **처리** | llama.cpp 바이너리(`llama-quantize` → `llama-perplexity` → `llama-bench`)를 직접 호출해 후보를 **실제로 양자화하고, 실제로 perplexity를 재고, 실제로 벤치마크**한다 |
-| **출력** | 목표를 만족하는 가장 작은 구성(quant × `-ngl` × ctx) + 실측 tok/s + 실측 품질손실 + **이미 만들어진 gguf 산출물(artifact)** 과 그걸 바로 쓰는 세 가지 방법 — 로컬 API 서버(`llama-server`) / Ollama(`--export-ollama`) / 대화형 확인용 `llama-cli` 커맨드 |
+| **출력** | 목표를 만족하는 구성(목표 속도를 내는 quant 중 품질이 가장 높은 것 × 최소 `-ngl` × ctx) + 실측 tok/s + 실측 품질손실 + **이미 만들어진 gguf 산출물(artifact)** 과 그걸 바로 쓰는 세 가지 방법 — 로컬 API 서버(`llama-server`) / Ollama(`--export-ollama`) / 대화형 확인용 `llama-cli` 커맨드 |
 
 **무엇을 확인하면 "정상 동작"인가.** `fituna doctor`가 9개 점검 항목을 출력하고
 실패 0건이면 환경 준비가 끝난 것이고, `fituna run`이 단계별 진행 로그(양자화 →

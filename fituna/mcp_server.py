@@ -41,7 +41,7 @@ from typing import Any, Optional
 
 from fituna import __version__, binaries, hardware, model_info, report, search
 from fituna.cache import ResultCache
-from fituna.config import FiTunaError, NoFeasibleConfigError, TargetSpec
+from fituna.config import FiTunaError, NoFeasibleConfigError, TargetSpec, check_target_ranges
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_INFO = {"name": "fituna", "version": __version__}
@@ -148,6 +148,10 @@ def _recommend(args: dict[str, Any]) -> dict[str, Any]:
         target_tps = float(args["target_tps"])
     except (KeyError, TypeError, ValueError) as exc:
         raise FiTunaError("target_tps must be a number") from exc
+    max_loss = float(args.get("max_quality_loss_pct") or 5.0)
+    ctx = int(args.get("ctx") or 4096)
+    # fail before model conversion, not after (TargetSpec re-checks anyway)
+    check_target_ranges(target_tps, max_loss, (ctx,))
 
     bins = binaries.locate_binaries()
     hw = hardware.detect_hardware()
@@ -158,7 +162,6 @@ def _recommend(args: dict[str, Any]) -> dict[str, Any]:
     base_gguf = model_info.ensure_base_gguf(model_path, work_dir, bins)
     minfo = model_info.read_model_info(base_gguf, bins)
 
-    ctx = int(args.get("ctx") or 4096)
     quants = args.get("quant_candidates") or _DEFAULT_QUANTS
     ppl_chunks_raw = args.get("ppl_chunks", 32)
     ppl_chunks: Optional[int] = int(ppl_chunks_raw) if int(ppl_chunks_raw) > 0 else None
@@ -166,7 +169,7 @@ def _recommend(args: dict[str, Any]) -> dict[str, Any]:
     target = TargetSpec(
         model_path=model_path,
         target_tokens_per_sec=target_tps,
-        max_quality_loss_pct=float(args.get("max_quality_loss_pct") or 5.0),
+        max_quality_loss_pct=max_loss,
         ctx=ctx,
         ctx_candidates=[ctx],
         quant_candidates=list(quants),

@@ -56,9 +56,9 @@ from dataclasses import asdict, fields, replace
 from pathlib import Path
 from typing import Optional, Sequence
 
-from fituna import binaries, corpus, doctor, hardware, model_info, quickstart, report, search
+from fituna import __version__, binaries, corpus, doctor, hardware, model_info, quickstart, report, search
 from fituna.cache import ResultCache
-from fituna.config import BinaryPaths, HardwareProfile, TargetSpec
+from fituna.config import BinaryPaths, HardwareProfile, TargetSpec, check_target_ranges
 from fituna.errors import BinaryNotFoundError, FiTunaError, NoFeasibleConfigError
 
 logger = logging.getLogger("fituna")
@@ -82,6 +82,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="enable debug logging"
     )
+    parser.add_argument("-V", "--version", action="version", version=f"fituna {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="search for a config meeting the target spec")
@@ -275,12 +276,12 @@ def _sort_quants_by_quality(raw: str) -> tuple[str, ...]:
     seen: set[str] = set()
     quants: list[str] = []
     for part in raw.split(","):
-        part = part.strip()
+        part = part.strip().upper()  # llama-quantize type names are all upper-case
         if part and part not in seen:
             seen.add(part)
             quants.append(part)
     if not quants:
-        raise ValueError("--quant must contain at least one quant type")
+        raise FiTunaError("--quant must contain at least one quant type")
     return tuple(sorted(quants, key=lambda q: order.get(q, len(order))))
 
 
@@ -435,6 +436,9 @@ def _cmd_help(args: argparse.Namespace) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     ctx_candidates = _parse_ctx_candidates(args.ctx)
     quant_candidates = _sort_quants_by_quality(args.quant)
+    check_target_ranges(args.target_tps, args.max_quality_loss, ctx_candidates)
+    if args.vram_mb is not None and args.vram_mb <= 0:
+        raise FiTunaError(f"--vram-mb must be positive, got {args.vram_mb}")
 
     bin_dir = Path(args.llama_bin_dir) if args.llama_bin_dir else None
     bins = binaries.locate_binaries(bin_dir=bin_dir)
@@ -442,7 +446,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     hw = hardware.parse_manual_hardware(args.gpu, args.vram_mb)
 
     work_dir = Path(args.out)
-    work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        work_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise FiTunaError(f"--out: cannot create directory {work_dir}: {exc}") from exc
 
     model_path = quickstart.resolve_hf_model(args.hf, work_dir) if args.hf else Path(args.model)
     base_gguf = model_info.ensure_base_gguf(model_path, work_dir, bins)

@@ -3,8 +3,9 @@
 ================
 
 Environment self-diagnosis for ``fituna doctor``. Runs a fixed battery of
-checks -- Python version, llama.cpp binaries, llama.cpp version, hardware
-detection, output directory writability, and free disk space -- and reports
+checks -- Python version, llama.cpp binaries (found *and* able to start),
+whether the build has a GPU backend, llama.cpp version, hardware detection,
+output directory writability, and free disk space -- and reports
 each as PASS/WARN/FAIL with a one-line remedy for anything short of PASS.
 
 Why this exists: today ``fituna run`` only reveals what is missing once it
@@ -38,6 +39,7 @@ import dataclasses
 import json
 import os
 import shutil
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -84,21 +86,51 @@ def _check_python(version_info: tuple = sys.version_info) -> DoctorCheck:
     )
 
 
+def _launch_error(path: Path) -> Optional[str]:
+    """None if the binary starts at all, else why it doesn't. The exit code
+    is deliberately ignored (llama-quantize --version exits 1 on a healthy
+    install); only a failed exec or a signal death counts -- that is what a
+    missing dylib (dyld -> SIGABRT) or a macOS quarantine kill looks like,
+    and both used to pass as "found"."""
+    try:
+        proc = subprocess.run(
+            [str(path), "--version"], capture_output=True, text=True, timeout=15
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return str(exc)
+    # ponytail: POSIX signals only; a Windows missing-DLL exit (0xC0000135) still passes
+    if proc.returncode < 0:
+        # dyld puts the useful part ("Library not loaded: @rpath/...") on line 1
+        lines = (proc.stderr or "").strip().splitlines()
+        return f"killed by signal {-proc.returncode}" + (f": {lines[0][:160]}" if lines else "")
+    return None
+
+
 def _check_binary(name: str, bin_dir: Optional[Path], *, required: bool) -> DoctorCheck:
     # Reuses fituna.binaries.find_exe -- the same single-binary lookup
     # locate_binaries() itself calls internally -- rather than duplicating
     # its shutil.which(...) wrapping here (see module docstring).
     path = binaries.find_exe(name, bin_dir)
-    if path is not None:
+    if path is None:
+        if required:
+            return DoctorCheck(name, "FAIL", "not found", _BINARY_REMEDY)
+        return DoctorCheck(
+            name,
+            "WARN",
+            "not found",
+            f"{name} is only used to run the final chosen config, not by "
+            "fituna itself; " + _BINARY_REMEDY,
+        )
+    error = _launch_error(path)
+    if error is None:
         return DoctorCheck(name, "PASS", str(path), None)
-    if required:
-        return DoctorCheck(name, "FAIL", "not found", _BINARY_REMEDY)
     return DoctorCheck(
         name,
-        "WARN",
-        "not found",
-        "llama-cli is only used to run the final chosen config, not by "
-        "fituna itself; " + _BINARY_REMEDY,
+        "FAIL" if required else "WARN",
+        f"{path} found but does not run: {error}",
+        "Reinstall llama.cpp. A build downloaded on macOS may need "
+        "`xattr -dr com.apple.quarantine <bin dir>`; a 'Library not loaded' "
+        "error means the bin directory was copied without its shared libraries.",
     )
 
 
@@ -178,6 +210,69 @@ def _check_llama_version(
         "could not be detected",
         'bench cache falls back to "unknown"; results from different builds '
         "may be reused. Upgrade llama.cpp or pass --llama-bin-dir.",
+    )
+
+
+# Backends llama-bench lists that are not a GPU offload target.
+_CPU_SIDE_BACKENDS = ("BLAS", "CPU", "RPC")
+
+
+def _list_devices(bench: Path) -> Optional[str]:
+    """`llama-bench --list-devices` stdout, or None if the build can't list."""
+    try:
+        proc = subprocess.run(
+            [str(bench), "--list-devices"], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0 or "Available devices" not in proc.stdout:
+        return None
+    return proc.stdout
+
+
+def _parse_gpu_devices(listing: str) -> list[str]:
+    """Device lines after "Available devices:" that are real GPU backends
+    (MTL0, CUDA0, Vulkan0, ROCm0, ...)."""
+    _, _, devices = listing.partition("Available devices:")
+    return [
+        line.strip()
+        for line in devices.splitlines()
+        if ":" in line and not line.strip().startswith(_CPU_SIDE_BACKENDS)
+    ]
+
+
+def _check_gpu_backend(paths: Optional[BinaryPaths]) -> DoctorCheck:
+    """WARN when the machine has a GPU but this llama.cpp build can't use it:
+    -ngl then does nothing and every measured speed is CPU speed."""
+    if paths is None:
+        return DoctorCheck(
+            "gpu-backend",
+            "WARN",
+            "skipped: llama-bench not available",
+            "Fix the llama-bench row above, then re-run fituna doctor.",
+        )
+    # ponytail: second detect_hardware() call (also in _check_hardware); <1 s, keeps each row independent
+    hw = hardware.detect_hardware()
+    listing = _list_devices(paths.llama_bench)
+    if listing is None:
+        return DoctorCheck(
+            "gpu-backend",
+            "WARN",
+            "llama-bench --list-devices failed (llama.cpp build too old?)",
+            "Upgrade llama.cpp so FiTuna can confirm the build can use your GPU.",
+        )
+    gpus = _parse_gpu_devices(listing)
+    if gpus:
+        return DoctorCheck("gpu-backend", "PASS", "; ".join(gpus), None)
+    if hw.gpu_vendor == GPUVendor.NONE:
+        return DoctorCheck("gpu-backend", "PASS", "CPU-only build (no GPU detected either)", None)
+    return DoctorCheck(
+        "gpu-backend",
+        "WARN",
+        f"{hw.gpu_vendor.value} GPU detected, but this llama.cpp build has no GPU backend",
+        "-ngl will have no effect and every measured speed will be CPU speed. "
+        "Install a GPU-enabled llama.cpp (Homebrew's includes Metal; for NVIDIA "
+        "build with -DGGML_CUDA=ON) and point --llama-bin-dir at it.",
     )
 
 
@@ -309,7 +404,11 @@ def run_checks(bin_dir: Optional[Path], out_dir: Path) -> list[DoctorCheck]:
 
     binary_rows, paths = _check_required_binaries(bin_dir)
     checks.extend(binary_rows)
-    checks.append(_safe("llama-cli", lambda: _check_binary("llama-cli", bin_dir, required=False)))
+    for optional in ("llama-cli", "llama-server"):
+        checks.append(
+            _safe(optional, lambda n=optional: _check_binary(n, bin_dir, required=False))
+        )
+    checks.append(_safe("gpu-backend", lambda: _check_gpu_backend(paths)))
     checks.append(_safe("llama.cpp version", lambda: _check_llama_version(bin_dir, paths)))
     checks.append(_safe("hardware", _check_hardware))
     checks.append(_safe("out-dir", lambda: _check_out_dir(out_dir)))
@@ -368,6 +467,13 @@ def to_human(checks: list[DoctorCheck]) -> str:
     warning_word = "warning" if warned == 1 else "warnings"
     lines.append("")
     lines.append(f"{passed} {check_word} passed, {warned} {warning_word}, {failed} failed.")
+    first_fail = next((c.name for c in checks if c.status == "FAIL"), None)
+    if first_fail:
+        lines.append(f"Next: fix {first_fail} first (see its -> line), then re-run `fituna doctor`.")
+    else:
+        lines.append(
+            "Next: run `fituna quickstart` for a guided first run, or see `fituna run -h`."
+        )
     return "\n".join(lines)
 
 
@@ -424,6 +530,7 @@ def _selfcheck() -> None:
     assert "[PASS] x" in human, human
     assert "-> fix meh" in human, human
     assert "1 check passed, 1 warning, 0 failed." in human, human
+    assert human.splitlines()[-1].startswith("Next: run `fituna quickstart`"), human
 
     # 5. to_json: documented schema, round-trips through json.loads.
     payload = json.loads(to_json([p, w, f_other]))
@@ -441,7 +548,7 @@ def _selfcheck() -> None:
     #    "never raises, whatever the machine has" smoke test in
     #    fituna.hardware._selfcheck / fituna.binaries._selfcheck).
     checks = run_checks(None, Path("./out"))
-    assert len(checks) == 9, len(checks)
+    assert len(checks) == 11, len(checks)
     assert {c.status for c in checks} <= {"PASS", "WARN", "FAIL"}
     assert exit_code(checks) in (0, 1, 2)
 

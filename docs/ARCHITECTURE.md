@@ -3,8 +3,9 @@
 ## 개요
 
 FiTuna는 llama.cpp 바이너리를 subprocess로 조율하는 Python 3.11 CLI입니다.
-사용자가 정한 품질 손실 예산을 넘지 않으면서 처리량 목표를 만족하는 가장 가벼운
-GGUF 양자화·실행 설정(`quant`, `-ngl`, `-c`)을 찾습니다. FiTuna 자체는 tensor
+사용자가 정한 품질 손실 예산을 넘지 않으면서 처리량 목표를 만족하는 GGUF
+양자화·실행 설정(`quant`, `-ngl`, `-c`)을 찾습니다. quant는 품질 높은 순서로
+검사해 처음 통과한 것을 고르고, `-ngl`은 그 quant가 목표를 내는 최솟값입니다. FiTuna 자체는 tensor
 연산을 하지 않습니다. 추론, 양자화, perplexity 계산은 모두 llama.cpp C++
 바이너리가 맡고 FiTuna는 실행 조율, 출력 해석, 탐색, cache를 담당합니다. Python
 런타임 의존성은 0개이며 표준 라이브러리만 사용합니다.

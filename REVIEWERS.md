@@ -40,9 +40,9 @@ FiTuna는 로컬 LLM(llama.cpp)을 돌릴 때 **어떤 양자화 레벨(quant)�
 |---|---|
 | **입력** | F16 GGUF 모델 파일(로컬 경로 또는 `--hf`로 HuggingFace 저장소 지정), 목표 생성속도(tok/s), 허용 품질저하(%), 컨텍스트 길이, 품질 측정용 텍스트 코퍼스 |
 | **처리** | llama.cpp 바이너리(`llama-quantize` → `llama-perplexity` → `llama-bench`)를 직접 호출해 후보를 **실제로 양자화하고, 실제로 perplexity를 재고, 실제로 벤치마크**한다 |
-| **출력** | 목표를 만족하는 가장 작은 구성(quant × `-ngl` × ctx) + 실측 tok/s + 실측 품질손실 + **이미 만들어진 gguf 산출물(artifact)** 과 그걸 바로 쓰는 세 가지 방법 — 로컬 API 서버(`llama-server`) / Ollama(`--export-ollama`) / 대화형 확인용 `llama-cli` 커맨드 |
+| **출력** | 목표를 만족하는 구성(목표 속도를 내는 quant 중 품질이 가장 높은 것 × 최소 `-ngl` × ctx) + 실측 tok/s + 실측 품질손실 + **이미 만들어진 gguf 산출물(artifact)** 과 그걸 바로 쓰는 세 가지 방법 — 로컬 API 서버(`llama-server`) / Ollama(`--export-ollama`) / 대화형 확인용 `llama-cli` 커맨드 |
 
-**무엇을 확인하면 "정상 동작"인가.** `fituna doctor`가 9개 점검 항목을 출력하고
+**무엇을 확인하면 "정상 동작"인가.** `fituna doctor`가 11개 점검 항목을 출력하고
 실패 0건이면 환경 준비가 끝난 것이고, `fituna run`이 단계별 진행 로그(양자화 →
 품질 평가 → 벤치)를 흘린 뒤 마지막에 `FiTuna result:` 블록과 산출물(artifact)
 블록 — 생성된 gguf 경로·크기, 그리고 그걸 바로 쓰는 세 가지 방법(로컬 API 서버 /
@@ -237,17 +237,22 @@ FiTuna doctor
   [PASS] llama-bench       /opt/homebrew/bin/llama-bench
   [PASS] llama-perplexity  /opt/homebrew/bin/llama-perplexity
   [PASS] llama-cli         /opt/homebrew/bin/llama-cli
+  [PASS] llama-server      /opt/homebrew/bin/llama-server
+  [PASS] gpu-backend       MTL0: Apple M3 Pro (13639 MiB, 13639 MiB free)
   [PASS] llama.cpp version 9960 (a935fbffe)
   [PASS] hardware          gpu=apple (Apple M3 Pro), vram=18432MB, cpu=11 cores, ram=18432MB, os=darwin
   [PASS] out-dir           out does not exist yet; can be created under .
   [PASS] disk-space        52.7 GB free at .
 
-9 checks passed, 0 warnings, 0 failed.
+11 checks passed, 0 warnings, 0 failed.
+Next: run `fituna quickstart` for a guided first run, or see `fituna run -h`.
 ```
 
 경로/버전/하드웨어 값은 검증 기기에 따라 다르다. **`failed`가 0이면 다음
 단계로 진행해도 된다.** `PASS`가 아닌 항목에는 항상 `->`로 시작하는 구체적인
-조치 방법이 함께 출력된다. 기계 수집용으로는 `fituna doctor --json`을 쓴다.
+조치 방법이 함께 출력된다. 바이너리는 경로만 찾는 게 아니라 실제로 실행해 보고
+(dylib 누락·macOS 격리로 실행이 안 되면 `FAIL`), `gpu-backend`는 GPU가 있는데
+llama.cpp 빌드가 CPU 전용이면 `WARN`을 낸다. 기계 수집용으로는 `fituna doctor --json`을 쓴다.
 
 ### 4-4. 품질 측정용 코퍼스 내려받기
 
@@ -690,7 +695,7 @@ cd fituna
 python3.13 -m pytest -q
 ```
 
-직접 실행 결과: `322 passed in 3.27s` (2026-10-05, `v0.3.2` 기준. 테스트가
+직접 실행 결과: `360 passed in 3.91s` (2026-10-05, `v0.3.3` 기준. 테스트가
 추가되면 개수는 늘어난다 — 중요한 것은 **실패 0건**이다).
 
 > **`python3`가 아니라 `python3.13`인 이유.** macOS 기본 `python3`는 3.9.6이고,

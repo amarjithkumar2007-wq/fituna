@@ -7,6 +7,43 @@
 
 ## [미출시]
 
+## [0.3.3] — 2026-10-05
+
+### 추가
+
+- **`fituna --version` / `-V`** — 설치된 버전을 출력합니다.
+- **`fituna doctor` 점검 강화 (9개 → 11개)**
+  - 바이너리를 경로로만 찾지 않고 실제로 실행해 봅니다. dylib 누락(`Library not loaded`)이나
+    macOS 격리로 실행되지 않는 바이너리가 이전에는 `PASS`였습니다.
+  - `gpu-backend`: `llama-bench --list-devices`로 빌드가 GPU를 쓸 수 있는지 확인합니다. GPU가
+    있는데 CPU 전용 빌드면 `-ngl`이 효과가 없고 모든 측정이 CPU 속도가 되므로 `WARN`을 냅니다.
+  - `llama-server`: 결과 화면이 첫 번째로 안내하는 실행 방법이라 함께 확인합니다.
+  - 마지막 줄에 다음 단계를 안내합니다(실패가 있으면 먼저 고칠 항목, 없으면 `fituna quickstart`).
+
+### 수정
+
+- **범위를 벗어난 목표값을 받아 탐색까지 돌던 문제** — `--target-tps -1`은 24초
+  동안 탐색한 뒤 "MEETS TARGET"을 보고했고, `nan`·`inf`, `--max-quality-loss 500`,
+  `--ctx 0`, `--vram-mb 0`도 그대로 받았습니다. 이제 바이너리 탐색·모델 변환 전에
+  거부합니다(목표 속도는 양수, 품질 손실은 0~100%, ctx는 양수). 같은 검사가
+  `TargetSpec`에도 있어 MCP `fituna_recommend`와 라이브러리 호출도 막힙니다.
+- **`--quant ''`와 쓸 수 없는 `--out`에서 Python traceback이 나오던 문제** — 이제
+  한 줄 오류 메시지와 종료 코드 1로 끝납니다.
+- **없거나 빈 `--quality-corpus`를 모델 변환·다운로드 뒤에야 알리던 문제** — 이제
+  시작하자마자 거부하고 `fituna fetch-corpus`를 안내합니다. 빈 파일은 llama-perplexity
+  원본 오류만 나왔습니다.
+- **`--hf`와 `--json`을 함께 쓰면 JSON이 깨지던 문제** — 라이선스 안내, 모델 재사용 안내, 다운로드
+  진행률이 stdout으로 나가 JSON 앞에 섞였습니다. 이제 stderr로 출력합니다.
+- **`--quant q4_k_m`처럼 소문자 quant 이름을 거부하던 문제** — 대문자로 맞춰 받습니다.
+- **없는 HuggingFace 저장소에 "HTTP Error 401: Unauthorized"가 나오던 문제** — HF는
+  없는 저장소에 404 대신 401을 돌려줍니다. 이제 저장소를 찾지 못했다고 안내합니다.
+
+### 문서
+
+- **"가장 가벼운/smallest 구성을 찾는다"는 설명을 실제 동작에 맞춤** — 탐색은 quant를
+  품질 높은 순서로 검사해 처음 목표를 넘는 것을 고르고, `-ngl`만 최솟값을 찾습니다.
+  README, `fituna --help`, MCP 도구 설명, PyPI 설명을 이 동작대로 고쳤습니다.
+
 ## [0.3.2] — 2026-10-05
 
 ### 수정
@@ -275,6 +312,8 @@ subprocess 계층을 의도적으로 모의 처리하므로, 실제 llama.cpp �
   저장소 상태와 맞추고 라이선스 준수 기록의 오래된 수치도 고쳤습니다.
 - `--wikitext`를 `--quality-corpus`로 바꿨습니다. 이전 이름을 alias로
   유지하므로 호환성을 깨는 변경은 아닙니다.
+
+[0.3.3]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.3
 
 [0.3.2]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.2
 [0.3.1]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.1

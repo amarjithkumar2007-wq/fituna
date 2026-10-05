@@ -56,9 +56,9 @@ from dataclasses import asdict, fields, replace
 from pathlib import Path
 from typing import Optional, Sequence
 
-from fituna import binaries, corpus, doctor, hardware, model_info, quickstart, report, search
+from fituna import __version__, binaries, corpus, doctor, hardware, model_info, quickstart, report, search
 from fituna.cache import ResultCache
-from fituna.config import BinaryPaths, HardwareProfile, TargetSpec
+from fituna.config import BinaryPaths, HardwareProfile, TargetSpec, check_target_ranges
 from fituna.errors import BinaryNotFoundError, FiTunaError, NoFeasibleConfigError
 
 logger = logging.getLogger("fituna")
@@ -74,14 +74,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fituna",
         description=(
-            "Find the smallest llama.cpp quantization + runtime config "
-            "(quant, -ngl, ctx) that meets a target throughput within a "
-            "quality-loss budget, by benchmarking on your actual hardware."
+            "Find the highest-quality llama.cpp quantization that meets a "
+            "target throughput within a quality-loss budget, with the fewest "
+            "GPU layers (-ngl) it needs, by benchmarking on your actual hardware."
         ),
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="enable debug logging"
     )
+    parser.add_argument("-V", "--version", action="version", version=f"fituna {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="search for a config meeting the target spec")
@@ -173,7 +174,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     doc = sub.add_parser(
         "doctor",
-        help="diagnose the environment: Python version, llama.cpp binaries/version, "
+        help="diagnose the environment: Python version, llama.cpp binaries (found "
+        "and actually runnable)/version, whether the build can use your GPU, "
         "hardware detection, output directory writability, and free disk space",
     )
     doc.add_argument("--llama-bin-dir", default=None, dest="llama_bin_dir")
@@ -275,12 +277,12 @@ def _sort_quants_by_quality(raw: str) -> tuple[str, ...]:
     seen: set[str] = set()
     quants: list[str] = []
     for part in raw.split(","):
-        part = part.strip()
+        part = part.strip().upper()  # llama-quantize type names are all upper-case
         if part and part not in seen:
             seen.add(part)
             quants.append(part)
     if not quants:
-        raise ValueError("--quant must contain at least one quant type")
+        raise FiTunaError("--quant must contain at least one quant type")
     return tuple(sorted(quants, key=lambda q: order.get(q, len(order))))
 
 
@@ -369,8 +371,8 @@ def _cmd_fetch_corpus(args: argparse.Namespace) -> int:
 # most sessions actually need, in the order a first-time user hits them).
 _HELP_PAGE = """\
 FiTuna -- llama.cpp 양자화 설정을 실측으로 찾는 CLI
-Find the smallest llama.cpp quant + runtime config that meets your target,
-measured on your actual hardware.
+Find the highest-quality llama.cpp quant that meets your target, with the
+fewest GPU layers it needs -- measured on your actual hardware.
 
 처음이라면 (getting started):
   fituna quickstart      대화형 마법사 -- 전 과정을 안내
@@ -435,6 +437,16 @@ def _cmd_help(args: argparse.Namespace) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     ctx_candidates = _parse_ctx_candidates(args.ctx)
     quant_candidates = _sort_quants_by_quality(args.quant)
+    check_target_ranges(args.target_tps, args.max_quality_loss, ctx_candidates)
+    if args.vram_mb is not None and args.vram_mb <= 0:
+        raise FiTunaError(f"--vram-mb must be positive, got {args.vram_mb}")
+    corpus_path = Path(args.wikitext)
+    # checked here too (quality.py checks again) so a typo fails before an HF download
+    if not corpus_path.is_file() or corpus_path.stat().st_size == 0:
+        raise FiTunaError(
+            f"--quality-corpus {corpus_path} is missing or empty -- run "
+            "`fituna fetch-corpus --out wiki.txt` to download one"
+        )
 
     bin_dir = Path(args.llama_bin_dir) if args.llama_bin_dir else None
     bins = binaries.locate_binaries(bin_dir=bin_dir)
@@ -442,7 +454,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     hw = hardware.parse_manual_hardware(args.gpu, args.vram_mb)
 
     work_dir = Path(args.out)
-    work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        work_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise FiTunaError(f"--out: cannot create directory {work_dir}: {exc}") from exc
 
     model_path = quickstart.resolve_hf_model(args.hf, work_dir) if args.hf else Path(args.model)
     base_gguf = model_info.ensure_base_gguf(model_path, work_dir, bins)
@@ -471,7 +486,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
 
     cache = ResultCache(work_dir / ".fituna_cache.sqlite3") if args.resume else None
-    wikitext_path = Path(args.wikitext)
 
     result = search.search(
         target,
@@ -479,7 +493,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         hw,
         bins,
         work_dir,
-        wikitext_path,
+        corpus_path,
         cache=cache,
         progress_cb=logger.info,
     )

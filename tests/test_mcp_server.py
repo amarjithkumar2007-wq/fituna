@@ -96,6 +96,27 @@ def test_recommend_rejects_invalid_target_before_environment_checks(arguments):
     assert "target_tps must be a number" in response["content"][0]["text"]
 
 
+@pytest.mark.parametrize(
+    "arguments, needle",
+    [
+        ({"target_tps": -1}, "--target-tps"),
+        ({"target_tps": 20, "max_quality_loss_pct": 500}, "--max-quality-loss"),
+        ({"target_tps": 20, "ctx": -1}, "--ctx"),
+    ],
+)
+def test_recommend_rejects_out_of_range_target_before_environment_checks(
+    monkeypatch, arguments, needle
+):
+    def _must_not_run(*a, **k):
+        raise AssertionError("range check must come before locating binaries")
+
+    monkeypatch.setattr(mcp_server.binaries, "locate_binaries", _must_not_run)
+    response = mcp_server._tool_call("fituna_recommend", arguments)
+
+    assert response["isError"] is True
+    assert needle in response["content"][0]["text"]
+
+
 def test_initialize_reports_the_package_version():
     import fituna
 

@@ -299,3 +299,21 @@ def test_is_already_quantized():
     assert not is_already_quantized(info(1))      # F16
     assert not is_already_quantized(info(32))     # BF16
     assert is_already_quantized(info(15))         # Q4_K_M etc.
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"target_tokens_per_sec": -1.0},
+        {"target_tokens_per_sec": float("nan")},
+        {"max_quality_loss_pct": 101.0},
+        {"max_quality_loss_pct": float("inf")},
+        {"ctx": 0, "ctx_candidates": (0,)},
+    ],
+)
+def test_target_spec_rejects_out_of_range_values(kwargs):
+    # Library/MCP callers build TargetSpec without going through the CLI,
+    # so the range check must live on the dataclass itself.
+    base = {"model_path": Path("m.gguf"), "target_tokens_per_sec": 20.0, "max_quality_loss_pct": 5.0}
+    with pytest.raises(FiTunaError):
+        TargetSpec(**{**base, **kwargs})

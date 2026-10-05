@@ -13,6 +13,7 @@ between modules can never produce spooky action-at-a-distance bugs.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -65,6 +66,9 @@ class TargetSpec:
     quality_metric: str = "ppl"  # "ppl" | "kld"
 
     def __post_init__(self) -> None:
+        check_target_ranges(
+            self.target_tokens_per_sec, self.max_quality_loss_pct, self.ctx_candidates
+        )
         # cli.py always builds ctx_candidates with ctx first, but a library
         # caller constructing TargetSpec directly could pass a ctx not in
         # ctx_candidates -- enforce the invariant here rather than only at
@@ -181,6 +185,25 @@ class CorpusPreset:
 
 class FiTunaError(Exception):
     """Base class for all FiTuna errors."""
+
+
+def check_target_ranges(
+    target_tps: float, max_quality_loss_pct: float, ctx_candidates: tuple[int, ...]
+) -> None:
+    """Reject nonsense targets up front. TargetSpec calls this for every
+    caller (CLI, MCP, library); cli.py also calls it first thing so a typo
+    fails in milliseconds instead of after model conversion. Without it,
+    --target-tps -1 searched for 24 s and then reported MEETS TARGET."""
+    if not (math.isfinite(target_tps) and target_tps > 0):
+        raise FiTunaError(f"--target-tps must be a positive number, got {target_tps}")
+    # ponytail: 100 % cap is a typo guard (500 almost always means 5.00), not physics
+    if not (math.isfinite(max_quality_loss_pct) and 0 <= max_quality_loss_pct <= 100):
+        raise FiTunaError(
+            f"--max-quality-loss must be between 0 and 100 (percent), got {max_quality_loss_pct}"
+        )
+    bad_ctx = [c for c in ctx_candidates if c <= 0]
+    if bad_ctx:
+        raise FiTunaError(f"--ctx values must be positive, got {bad_ctx[0]}")
 
 
 class BinaryNotFoundError(FiTunaError):

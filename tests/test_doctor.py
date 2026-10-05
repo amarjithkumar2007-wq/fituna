@@ -11,12 +11,20 @@ convention this file follows.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 from fituna import cli, doctor
 from fituna.config import BinaryPaths, DoctorCheck, GPUVendor, HardwareProfile
+
+
+@pytest.fixture(autouse=True)
+def _binaries_launch_fine(monkeypatch):
+    # Fake paths from find_exe stubs don't exist; tests that care about the
+    # launch probe call monkeypatch.undo() first.
+    monkeypatch.setattr(doctor, "_launch_error", lambda path: None)
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +45,7 @@ def test_run_checks_isolates_a_crash_to_its_own_row(monkeypatch, tmp_path):
 
     checks = doctor.run_checks(None, tmp_path / "out")  # must not raise
 
-    assert len(checks) == 9
+    assert len(checks) == 11
     by_name = {c.name: c for c in checks}
     # "python" touches none of the broken dependencies -> still a clean PASS.
     assert by_name["python"].status == "PASS"
@@ -46,6 +54,7 @@ def test_run_checks_isolates_a_crash_to_its_own_row(monkeypatch, tmp_path):
         "llama-bench",
         "llama-perplexity",
         "llama-cli",
+        "llama-server",
         "llama.cpp version",
         "hardware",
         "out-dir",
@@ -55,6 +64,9 @@ def test_run_checks_isolates_a_crash_to_its_own_row(monkeypatch, tmp_path):
         assert row.status == "FAIL", (name, row)
         assert "boom" in row.detail
         assert row.remedy is not None
+
+    # no llama-bench path to probe -> skipped, not crashed
+    assert by_name["gpu-backend"].status == "WARN"
 
     # a FAIL on a required binary must still win exit-code precedence (2).
     assert doctor.exit_code(checks) == 2
@@ -484,7 +496,8 @@ def test_to_human_matches_brief_example_exactly():
         '         -> bench cache falls back to "unknown"; results from different\n'
         "            builds may be reused. Upgrade llama.cpp or pass --llama-bin-dir.\n"
         "\n"
-        "2 checks passed, 1 warning, 0 failed."
+        "2 checks passed, 1 warning, 0 failed.\n"
+        "Next: run `fituna quickstart` for a guided first run, or see `fituna run -h`."
     )
     assert human == expected_rows
 
@@ -573,3 +586,127 @@ if __name__ == "__main__":
     import sys
 
     raise SystemExit(pytest.main([__file__, "-v", *sys.argv[1:]]))
+
+
+# ---------------------------------------------------------------------------
+# launch probe: a binary on PATH that cannot actually start (missing dylib,
+# macOS quarantine kill) used to show up as PASS
+# ---------------------------------------------------------------------------
+
+
+def test_required_binary_that_cannot_start_is_a_fail(monkeypatch):
+    monkeypatch.setattr(doctor.binaries, "find_exe", lambda name, bin_dir: Path("/x/llama-bench"))
+    monkeypatch.setattr(
+        doctor, "_launch_error", lambda path: "killed by signal 6: dyld: Library not loaded"
+    )
+
+    row = doctor._check_binary("llama-bench", None, required=True)
+
+    assert row.status == "FAIL"
+    assert "does not run" in row.detail and "dyld" in row.detail
+    assert "quarantine" in row.remedy
+
+
+def test_optional_binary_that_cannot_start_is_only_a_warn(monkeypatch):
+    monkeypatch.setattr(doctor.binaries, "find_exe", lambda name, bin_dir: Path("/x/llama-server"))
+    monkeypatch.setattr(doctor, "_launch_error", lambda path: "boom")
+    assert doctor._check_binary("llama-server", None, required=False).status == "WARN"
+
+
+def _script(tmp_path: Path, body: str) -> Path:
+    exe = tmp_path / "fake"
+    exe.write_text("#!/bin/sh\n" + body)
+    exe.chmod(0o755)
+    return exe
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell scripts")
+def test_launch_error_ignores_a_nonzero_exit_code(tmp_path, monkeypatch):
+    monkeypatch.undo()  # real probe
+    # llama-quantize --version exits 1 on a healthy install.
+    assert doctor._launch_error(_script(tmp_path, "exit 1\n")) is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+def test_launch_error_reports_a_signal_kill(tmp_path, monkeypatch):
+    monkeypatch.undo()
+    exe = _script(tmp_path, "echo 'dyld: Library not loaded' >&2\necho '  Reason: tried: x' >&2\nkill -ABRT $$\n")
+    err = doctor._launch_error(exe)
+    assert err is not None and "signal" in err and "dyld" in err
+
+
+def test_launch_error_reports_a_file_that_cannot_execute(tmp_path, monkeypatch):
+    monkeypatch.undo()
+    exe = tmp_path / "fake"
+    exe.write_text("not a program")  # no exec bit
+    assert doctor._launch_error(exe) is not None
+
+
+# ---------------------------------------------------------------------------
+# gpu-backend: a GPU on the machine but a CPU-only llama.cpp build means -ngl
+# does nothing and every measured speed is CPU speed
+# ---------------------------------------------------------------------------
+
+_METAL_DEVICES = """\
+ggml_metal_device_init: use shared buffers    = true
+Available devices:
+  MTL0: Apple M3 Pro (13639 MiB, 13639 MiB free)
+  BLAS: Accelerate (0 MiB, 0 MiB free)
+"""
+_CPU_ONLY_DEVICES = "Available devices:\n  BLAS: Accelerate (0 MiB, 0 MiB free)\n"
+
+
+def test_parse_gpu_devices_skips_cpu_side_backends():
+    assert doctor._parse_gpu_devices(_METAL_DEVICES) == [
+        "MTL0: Apple M3 Pro (13639 MiB, 13639 MiB free)"
+    ]
+    assert doctor._parse_gpu_devices(_CPU_ONLY_DEVICES) == []
+    assert doctor._parse_gpu_devices("Available devices:\n") == []
+
+
+def _hw(vendor: GPUVendor) -> HardwareProfile:
+    return HardwareProfile(
+        gpu_vendor=vendor, gpu_name=None, vram_mb=None, cpu_cores=8, ram_mb=16384, os_name="darwin"
+    )
+
+
+def _paths() -> BinaryPaths:
+    return BinaryPaths(Path("/x/q"), Path("/x/llama-bench"), Path("/x/p"))
+
+
+@pytest.mark.parametrize(
+    "vendor, listing, status",
+    [
+        (GPUVendor.APPLE, _METAL_DEVICES, "PASS"),
+        (GPUVendor.APPLE, _CPU_ONLY_DEVICES, "WARN"),
+        (GPUVendor.NONE, _CPU_ONLY_DEVICES, "PASS"),
+        (GPUVendor.NVIDIA, None, "WARN"),  # --list-devices unsupported or failed
+    ],
+)
+def test_gpu_backend_status(monkeypatch, vendor, listing, status):
+    monkeypatch.setattr(doctor.hardware, "detect_hardware", lambda: _hw(vendor))
+    monkeypatch.setattr(doctor, "_list_devices", lambda bench: listing)
+
+    row = doctor._check_gpu_backend(_paths())
+
+    assert row.status == status, row
+    if status == "WARN":
+        assert row.remedy
+
+
+def test_gpu_backend_without_llama_bench_is_a_warn_not_a_crash(monkeypatch):
+    monkeypatch.setattr(doctor.hardware, "detect_hardware", lambda: _hw(GPUVendor.APPLE))
+    row = doctor._check_gpu_backend(None)
+    assert row.status == "WARN" and "llama-bench" in row.detail
+
+
+# ---------------------------------------------------------------------------
+# next-step line
+# ---------------------------------------------------------------------------
+
+
+def test_to_human_next_step_names_the_first_fail():
+    human = doctor.to_human(
+        [_mk("a", "PASS"), _mk("llama-bench", "FAIL", remedy="x"), _mk("z", "FAIL", remedy="y")]
+    )
+    assert human.splitlines()[-1].startswith("Next: fix llama-bench first")

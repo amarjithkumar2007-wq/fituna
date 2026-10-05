@@ -439,6 +439,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
     check_target_ranges(args.target_tps, args.max_quality_loss, ctx_candidates)
     if args.vram_mb is not None and args.vram_mb <= 0:
         raise FiTunaError(f"--vram-mb must be positive, got {args.vram_mb}")
+    corpus_path = Path(args.wikitext)
+    # checked here too (quality.py checks again) so a typo fails before an HF download
+    if not corpus_path.is_file() or corpus_path.stat().st_size == 0:
+        raise FiTunaError(
+            f"--quality-corpus {corpus_path} is missing or empty -- run "
+            "`fituna fetch-corpus --out wiki.txt` to download one"
+        )
 
     bin_dir = Path(args.llama_bin_dir) if args.llama_bin_dir else None
     bins = binaries.locate_binaries(bin_dir=bin_dir)
@@ -478,7 +485,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
 
     cache = ResultCache(work_dir / ".fituna_cache.sqlite3") if args.resume else None
-    wikitext_path = Path(args.wikitext)
+    wikitext_path = corpus_path
 
     result = search.search(
         target,

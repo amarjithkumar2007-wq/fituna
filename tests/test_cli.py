@@ -281,9 +281,11 @@ def test_cli_quality_metric_parsing():
 
 
 def _bad_run_argv(tmp_path: Path, *extra: str) -> list[str]:
+    corpus = tmp_path / "wiki.txt"
+    corpus.write_text("some text\n")
     return [
         "run", "--model", str(_model_gguf(tmp_path)),
-        "--quality-corpus", str(tmp_path / "wiki.txt"),
+        "--quality-corpus", str(corpus),
         "--out", str(tmp_path / "out"),
         *extra,
     ]
@@ -303,6 +305,8 @@ def _bad_run_argv(tmp_path: Path, *extra: str) -> list[str]:
         (("--target-tps", "20", "--max-quality-loss", "5", "--ctx", "4096,-1"), "--ctx"),
         (("--target-tps", "20", "--max-quality-loss", "5", "--vram-mb", "0"), "--vram-mb"),
         (("--target-tps", "20", "--max-quality-loss", "5", "--quant", ""), "--quant"),
+        (("--target-tps", "20", "--max-quality-loss", "5", "--wikitext", "/nope.txt"), "--quality-corpus"),
+        (("--target-tps", "20", "--max-quality-loss", "5", "--wikitext", "/dev/null"), "--quality-corpus"),
     ],
 )
 def test_run_rejects_out_of_range_input_before_doing_any_work(

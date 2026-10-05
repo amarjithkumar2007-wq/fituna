@@ -22,6 +22,8 @@ import json
 import logging
 from pathlib import Path
 
+import pytest
+
 from fituna import cli
 from fituna.config import (
     BenchResult,
@@ -269,3 +271,90 @@ def test_cli_quality_metric_parsing():
     ])
     assert args_kld.quality_metric == "kld"
 
+
+
+# ---------------------------------------------------------------------------
+# input validation: nonsense values must be rejected before any binary lookup,
+# model conversion, or benchmark runs (found by a 55-case bad-input sweep:
+# --target-tps -1 used to search for 24 s and then report MEETS TARGET).
+# ---------------------------------------------------------------------------
+
+
+def _bad_run_argv(tmp_path: Path, *extra: str) -> list[str]:
+    return [
+        "run", "--model", str(_model_gguf(tmp_path)),
+        "--quality-corpus", str(tmp_path / "wiki.txt"),
+        "--out", str(tmp_path / "out"),
+        *extra,
+    ]
+
+
+@pytest.mark.parametrize(
+    "extra, needle",
+    [
+        (("--target-tps", "-1", "--max-quality-loss", "5"), "--target-tps"),
+        (("--target-tps", "0", "--max-quality-loss", "5"), "--target-tps"),
+        (("--target-tps", "nan", "--max-quality-loss", "5"), "--target-tps"),
+        (("--target-tps", "inf", "--max-quality-loss", "5"), "--target-tps"),
+        (("--target-tps", "20", "--max-quality-loss", "-5"), "--max-quality-loss"),
+        (("--target-tps", "20", "--max-quality-loss", "500"), "--max-quality-loss"),
+        (("--target-tps", "20", "--max-quality-loss", "nan"), "--max-quality-loss"),
+        (("--target-tps", "20", "--max-quality-loss", "5", "--ctx", "0"), "--ctx"),
+        (("--target-tps", "20", "--max-quality-loss", "5", "--ctx", "4096,-1"), "--ctx"),
+        (("--target-tps", "20", "--max-quality-loss", "5", "--vram-mb", "0"), "--vram-mb"),
+        (("--target-tps", "20", "--max-quality-loss", "5", "--quant", ""), "--quant"),
+    ],
+)
+def test_run_rejects_out_of_range_input_before_doing_any_work(
+    tmp_path, monkeypatch, caplog, extra, needle
+):
+    def _must_not_run(*a, **k):
+        raise AssertionError("validation must happen before locating binaries")
+
+    monkeypatch.setattr(cli.binaries, "locate_binaries", _must_not_run)
+    with caplog.at_level(logging.ERROR, logger="fituna"):
+        rc = cli.main(_bad_run_argv(tmp_path, *extra))
+
+    assert rc == 1
+    assert needle in caplog.text
+    assert "Traceback" not in caplog.text
+
+
+def test_run_accepts_zero_quality_loss_budget(tmp_path, monkeypatch):
+    # 0 % is a strict but legal budget, not a typo.
+    reached = []
+    monkeypatch.setattr(
+        cli.binaries, "locate_binaries",
+        lambda **k: reached.append(True) or (_ for _ in ()).throw(FiTunaError("stop")),
+    )
+    cli.main(_bad_run_argv(tmp_path, "--target-tps", "20", "--max-quality-loss", "0"))
+    assert reached
+
+
+def test_quant_names_are_case_insensitive():
+    assert cli._sort_quants_by_quality("q4_k_m,Q8_0") == ("Q8_0", "Q4_K_M")
+
+
+def test_unwritable_out_dir_is_a_clean_error_not_a_traceback(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(cli.binaries, "locate_binaries", lambda **k: _fake_binaries(tmp_path))
+    blocker = tmp_path / "a-file"
+    blocker.write_text("x")
+    argv = _bad_run_argv(tmp_path, "--target-tps", "20", "--max-quality-loss", "5")
+    argv[argv.index("--out") + 1] = str(blocker)
+
+    with caplog.at_level(logging.ERROR, logger="fituna"):
+        rc = cli.main(argv)
+
+    assert rc == 1
+    assert "--out" in caplog.text
+    assert "Traceback" not in caplog.text
+
+
+def test_version_flag_prints_package_version(capsys):
+    import fituna
+
+    for flag in ("--version", "-V"):
+        with pytest.raises(SystemExit) as exc:
+            cli.main([flag])
+        assert exc.value.code == 0
+        assert capsys.readouterr().out.strip() == f"fituna {fituna.__version__}"

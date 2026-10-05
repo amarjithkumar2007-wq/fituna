@@ -26,6 +26,7 @@ from fituna import cli, quickstart
 from fituna.config import (
     BenchResult,
     CandidateConfig,
+    FiTunaError,
     GPUVendor,
     HardwareProfile,
     NoFeasibleConfigError,
@@ -874,3 +875,16 @@ def test_run_parser_model_and_hf_are_mutually_exclusive_and_one_required(capsys)
     args = parser.parse_args(["run", "--hf", "org/repo", *common])
     assert args.hf == "org/repo"
     assert args.model is None
+
+
+def test_hf_listing_turns_a_401_into_a_repo_not_found_hint(monkeypatch):
+    # HF's API answers 401 (not 404) for a repo that doesn't exist; the raw
+    # "HTTP Error 401: Unauthorized" made users think they needed a token.
+    import urllib.error
+
+    def _raise(url, timeout):
+        raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
+
+    monkeypatch.setattr(quickstart.urllib.request, "urlopen", _raise)
+    with pytest.raises(FiTunaError, match="not found"):
+        quickstart._hf_repo_listing("nobody/does-not-exist")

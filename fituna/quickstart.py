@@ -88,7 +88,6 @@ import re
 import shlex
 import sys
 import tempfile
-import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -606,14 +605,12 @@ def _hf_repo_listing(repo: str) -> dict:
     try:
         with urllib.request.urlopen(url, timeout=TIMEOUT_SEC) as resp:
             return json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        if exc.code in (401, 404):  # HF answers 401, not 404, for a repo that doesn't exist
+    except OSError as exc:  # HTTPError is an OSError
+        if getattr(exc, "code", None) in (401, 404):  # HF answers 401, not 404, for a missing repo
             raise FiTunaError(
                 f"HuggingFace repo {repo!r} not found (or private/gated) -- check the "
                 f"spelling, e.g. bartowski/SmolLM2-135M-Instruct-GGUF (HTTP {exc.code})"
             ) from exc
-        raise FiTunaError(f"could not query HuggingFace for {repo}: {exc}") from exc
-    except OSError as exc:
         raise FiTunaError(f"could not query HuggingFace for {repo}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise FiTunaError(f"unexpected HuggingFace API response for {repo}: {exc}") from exc

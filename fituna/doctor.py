@@ -98,8 +98,8 @@ def _launch_error(path: Path) -> Optional[str]:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return str(exc)
-    # ponytail: Windows reports a missing DLL as an NTSTATUS exit code (0xC0000135), not a signal
-    if proc.returncode < 0 or proc.returncode >= 0xC0000000:
+    # ponytail: POSIX signals only; a Windows missing-DLL exit (0xC0000135) still passes
+    if proc.returncode < 0:
         # dyld puts the useful part ("Library not loaded: @rpath/...") on line 1
         lines = (proc.stderr or "").strip().splitlines()
         return f"killed by signal {-proc.returncode}" + (f": {lines[0][:160]}" if lines else "")

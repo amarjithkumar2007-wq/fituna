@@ -486,7 +486,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
 
     cache = ResultCache(work_dir / ".fituna_cache.sqlite3") if args.resume else None
-    wikitext_path = corpus_path
 
     result = search.search(
         target,
@@ -494,7 +493,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         hw,
         bins,
         work_dir,
-        wikitext_path,
+        corpus_path,
         cache=cache,
         progress_cb=logger.info,
     )

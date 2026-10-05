@@ -819,7 +819,9 @@ def test_resolve_hf_model_reuses_file_already_on_disk(tmp_path, capsys):
     (tmp_path / "m-f16.gguf").write_bytes(b"gguf")
     got = quickstart.resolve_hf_model("org/repo:m-f16.gguf", tmp_path)
     assert got == tmp_path / "m-f16.gguf"
-    assert "reusing" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "reusing" in captured.err
+    assert captured.out == ""  # stdout is reserved for `fituna run --json`
 
 
 def test_resolve_hf_model_downloads_named_file_without_listing_api(tmp_path, monkeypatch):
@@ -857,7 +859,9 @@ def test_resolve_hf_model_bare_repo_picks_f16_and_reports_license(
     )
     got = quickstart.resolve_hf_model("org/repo", tmp_path)
     assert got == tmp_path / "m-f16.gguf"
-    assert "apache-2.0" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "apache-2.0" in captured.err
+    assert captured.out == ""  # stdout is reserved for `fituna run --json`
 
 
 def test_run_parser_model_and_hf_are_mutually_exclusive_and_one_required(capsys):

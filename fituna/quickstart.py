@@ -553,7 +553,8 @@ def _download(url: str, dest: Path) -> Path:
                             # by the Korean wizard and the English --hf path
                             print(
                                 f"  {done * 100 // total:3d}% "
-                                f"({report.human_size(done)} / {report.human_size(total)})"
+                                f"({report.human_size(done)} / {report.human_size(total)})",
+                                file=sys.stderr,  # progress, not output
                             )
         os.replace(tmp, dest)
     except (OSError, TimeoutError, http.client.IncompleteRead) as exc:
@@ -634,13 +635,14 @@ def resolve_hf_model(spec: str, out_dir: Path) -> Path:
         print(
             f"license: {license_id} (weights published by {repo}; their terms, not FiTuna's)"
             if license_id
-            else f"license: not reported by the HuggingFace API for {repo} -- check the model card"
+            else f"license: not reported by the HuggingFace API for {repo} -- check the model card",
+            file=sys.stderr,  # stdout is reserved for `fituna run --json`
         )
     dest = out_dir / Path(filename).name
     if dest.exists():
-        print(f"model already on disk, reusing: {dest}")
+        print(f"model already on disk, reusing: {dest}", file=sys.stderr)
         return dest
-    print(f"downloading {HF_RESOLVE.format(repo=repo, filename=filename)}")
+    print(f"downloading {HF_RESOLVE.format(repo=repo, filename=filename)}", file=sys.stderr)
     return _download(HF_RESOLVE.format(repo=repo, filename=filename), dest)
 
 

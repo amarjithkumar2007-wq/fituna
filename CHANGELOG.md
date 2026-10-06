@@ -7,6 +7,19 @@
 
 ## [미출시]
 
+## [0.3.5] — 2026-10-06
+
+### 수정
+
+- **`--out` 경로에 공백이 있으면 결과의 실행 명령을 복사해도 실행되지 않던 문제.**
+  llama-server·llama-cli 명령과 `ollama create … -f` 안내가 경로를 따옴표 없이
+  출력했습니다. 이제 셸에 그대로 붙여 넣을 수 있게 인용합니다(POSIX는 `shlex.join`,
+  Windows는 `subprocess.list2cmdline`). `--json`의 `run_command`·`llama_server_command`는
+  원래 인자 배열이라 바뀌지 않습니다.
+- **탐색 중 Ctrl+C를 누르면 Python traceback이 출력되던 문제.** 이제 한 줄 안내
+  ("interrupted … re-run with --resume to continue")를 출력하고 종료코드 130으로 끝납니다.
+  llama.cpp 하위 프로세스는 같은 SIGINT를 받아 함께 종료됩니다.
+
 ## [0.3.4] — 2026-10-06
 
 ### 수정
@@ -324,6 +337,8 @@ subprocess 계층을 의도적으로 모의 처리하므로, 실제 llama.cpp �
   저장소 상태와 맞추고 라이선스 준수 기록의 오래된 수치도 고쳤습니다.
 - `--wikitext`를 `--quality-corpus`로 바꿨습니다. 이전 이름을 alias로
   유지하므로 호환성을 깨는 변경은 아닙니다.
+
+[0.3.5]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.5
 
 [0.3.4]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.4
 

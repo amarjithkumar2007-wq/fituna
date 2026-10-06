@@ -542,6 +542,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         NoFeasibleConfigError -> log + return 3
         FiTunaError (other)   -> log + return 1
         unexpected Exception  -> log + return 1
+        Ctrl+C                -> one-line notice + return 130
         success               -> return 0 if result.meets_target else 1
     """
     parser = _build_parser()
@@ -589,6 +590,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except Exception:
         logger.exception("unexpected error")
         return 1
+    except KeyboardInterrupt:
+        # Not an Exception subclass, so it would otherwise dump a traceback.
+        # llama.cpp children share the process group and get the same SIGINT.
+        print("\ninterrupted -- measurements finished so far stay in the "
+              "--out cache; re-run with --resume to continue", file=sys.stderr)
+        return 130
 
 
 def _selfcheck() -> None:

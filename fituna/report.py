@@ -19,7 +19,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shlex
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -69,6 +71,12 @@ def _find_llama_cli(binaries: BinaryPaths) -> str:
 def _find_llama_server(binaries: BinaryPaths) -> str:
     """Locate llama-server (see :func:`_find_beside_binaries`)."""
     return _find_beside_binaries(binaries, _LLAMA_SERVER_NAMES)
+
+
+def shell_join(cmd: list[str]) -> str:
+    """Render argv as one copy-pasteable line: an --out path with spaces must
+    survive the paste. cmd.exe quoting differs from POSIX, hence the split."""
+    return subprocess.list2cmdline(cmd) if os.name == "nt" else shlex.join(cmd)
 
 
 def build_run_command(
@@ -233,7 +241,7 @@ def to_human(result: SearchResult) -> str:
     )
     lines += [
         "  1) local API server (OpenAI-compatible):",
-        f"       {' '.join(server_cmd)}",
+        f"       {shell_join(server_cmd)}",
     ]
     if server_cmd[0] == _LLAMA_SERVER_NAMES[0]:
         # Bare name -- but *why* differs by which branch produced server_cmd,
@@ -257,7 +265,7 @@ def to_human(result: SearchResult) -> str:
     if result.modelfile_path is not None:
         lines += [
             "  2) import into Ollama:",
-            f"       ollama create <name> -f {result.modelfile_path}",
+            f"       ollama create <name> -f {shell_join([str(result.modelfile_path)])}",
         ]
     else:
         lines.append(
@@ -266,7 +274,7 @@ def to_human(result: SearchResult) -> str:
         )
     lines += [
         "  3) terminal chat (interactive check):",
-        f"       {' '.join(result.run_command)}",
+        f"       {shell_join(result.run_command)}",
     ]
     return "\n".join(lines)
 
@@ -391,6 +399,12 @@ def _self_check() -> None:
     assert "Q4_K_M" in human
     assert "30.50" in human
     assert " ".join(cmd) in human
+    # 4a. A path with a space comes out quoted, so the printed line pastes.
+    spaced = to_human(dataclasses.replace(
+        result, gguf_path=Path("my out/m.gguf"),
+        run_command=["llama-cli", "-m", "my out/m.gguf"]))
+    assert shell_join(["llama-cli", "-m", "my out/m.gguf"]) in spaced
+    assert "-m my out/m.gguf" not in spaced
     artifact_at = human.index("artifact:")
     assert artifact_at < human.index("1) local API server")
     assert human.index("1) local API server") < human.index("2) import into Ollama")

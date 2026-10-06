@@ -362,3 +362,15 @@ def test_version_flag_prints_package_version(capsys):
             cli.main([flag])
         assert exc.value.code == 0
         assert capsys.readouterr().out.strip() == f"fituna {fituna.__version__}"
+
+
+def test_ctrl_c_is_a_one_line_notice_not_a_traceback(monkeypatch, capsys):
+    def interrupted(args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setitem(cli._DISPATCH, "detect-hw", interrupted)
+
+    assert cli.main(["detect-hw"]) == 130
+    err = capsys.readouterr().err
+    assert "interrupted" in err
+    assert "Traceback" not in err

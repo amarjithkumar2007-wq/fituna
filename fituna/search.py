@@ -29,7 +29,8 @@ Stage 2 -- speed search, walking quants in quality-descending order:
       monotonically non-decreasing in ngl (documented assumption; the worst
       case if it's violated is simply falling back to the already-known-good
       `top` result, so this stays safe).
-    - any extra ctx_candidates are re-verified at the winning ngl.
+    - extra ctx_candidates are part of the ngl predicate: an ngl only
+      counts as meeting the target if every ctx candidate does.
     - the first quant (in quality order) that produces a working candidate
       wins immediately -- lower-quality quants are never tried.
 
@@ -396,28 +397,35 @@ def search(
                 return build_result(top)
             continue
 
+        # Every ctx must hold at the chosen ngl. If even full offload misses
+        # one, no smaller ngl will (monotonic assumption) -- next quant.
+        if not verify_other_ctx(max_ngl):
+            if timed_out:
+                break
+            continue
+
         low = cached_bench(0, target.ctx)
         consider_best_effort(low)
-        if low.gen_tok_per_sec >= target.target_tokens_per_sec:
+        if low.gen_tok_per_sec >= target.target_tokens_per_sec and verify_other_ctx(0):
             progress(f"[{quant}] zero-offload already meets target (early-exit C)")
-            if verify_other_ctx(0):
-                return build_result(low)
-            continue
+            return build_result(low)
 
         if not time_left():
             timed_out = True
             break
 
-        # Binary search the minimal ngl in [0, max_ngl] meeting the target.
+        # Binary search the minimal ngl in [0, max_ngl] meeting the target at
+        # every ctx candidate (not just the first -- a larger ctx can need
+        # more offload than the first ctx's minimum).
         lo, hi = 0, max_ngl
-        best = top  # already known to satisfy the target
+        best = top  # already known to satisfy the target at every ctx
         calls = 0
         while lo < hi and calls < target.ngl_max_calls and time_left():
             mid = (lo + hi) // 2
             r = cached_bench(mid, target.ctx)
             consider_best_effort(r)
             calls += 1
-            if r.gen_tok_per_sec >= target.target_tokens_per_sec:
+            if r.gen_tok_per_sec >= target.target_tokens_per_sec and verify_other_ctx(mid):
                 best = r
                 hi = mid
             else:
@@ -425,12 +433,8 @@ def search(
         if not time_left():
             timed_out = True
 
-        if verify_other_ctx(best.candidate.ngl):
-            progress(f"[{quant}] found ngl={best.candidate.ngl} meeting target -- done")
-            return build_result(best)
-
-        if timed_out:
-            break
+        progress(f"[{quant}] found ngl={best.candidate.ngl} meeting target -- done")
+        return build_result(best)
 
     if timed_out:
         # A time-out is not proof that no config is feasible -- return the
@@ -612,6 +616,13 @@ def _self_check() -> None:
             raise AssertionError("expected NoFeasibleConfigError (no quant survives ctx=8192)")
         except NoFeasibleConfigError as e:
             assert e.closest is not None  # best attempt at ctx=4096 was still recorded
+
+        # --- 6. Larger ctx needs more offload: speed(ngl, 8192) = ngl - 5.
+        #        Minimal ngl for ctx=4096 alone is 20 (fails 8192 at 15);
+        #        the answer must be ngl=25, which meets both.
+        _mod.run_bench = make_fake_run_bench(lambda ngl, ctx: float(ngl - (5 if ctx == 8192 else 0)))
+        result_mc = search(multi_ctx_target, model_info_stub, hw_gpu, binaries_stub, work_dir, wikitext)
+        assert (result_mc.config.quant, result_mc.config.ngl) == ("Q8_0", 25), result_mc.config
     finally:
         (
             _mod.quantize, _mod.run_bench, _mod.evaluate_quality, _mod.compute_perplexity,

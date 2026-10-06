@@ -7,6 +7,18 @@
 
 ## [미출시]
 
+## [0.3.4] — 2026-10-06
+
+### 수정
+
+- **`--ctx`를 여러 개 지정했을 때 가능한 구성을 놓치던 문제.** 이전에는 첫 ctx 기준
+  최소 `ngl`에서만 나머지 ctx를 확인하고, 실패하면 `ngl`을 더 올려 보지 않고 그
+  quant를 버렸습니다. 큰 ctx일수록 GPU 오프로드가 더 필요한 경우가 많아서, 실제로는
+  가능한 구성이 있는데도 "no quant/ngl/ctx combination met" 으로 끝날 수 있었습니다.
+  이제 `ngl` 이진탐색의 판정 기준 자체가 "모든 ctx에서 목표 달성"입니다.
+  실측(SmolLM2-135M Q8_0, `--target-tps 180 --ctx 2048,8192`, M3 Pro): 0.3.3은 종료코드 3,
+  0.3.4는 `ngl=29`로 MEETS TARGET.
+
 ## [0.3.3] — 2026-10-05
 
 ### 추가
@@ -312,6 +324,8 @@ subprocess 계층을 의도적으로 모의 처리하므로, 실제 llama.cpp �
   저장소 상태와 맞추고 라이선스 준수 기록의 오래된 수치도 고쳤습니다.
 - `--wikitext`를 `--quality-corpus`로 바꿨습니다. 이전 이름을 alias로
   유지하므로 호환성을 깨는 변경은 아닙니다.
+
+[0.3.4]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.4
 
 [0.3.3]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.3
 

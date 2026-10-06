@@ -212,21 +212,24 @@ Perplexity는 `ngl`이나 `ctx`가 아닌 `quant`에만 의존하므로 품질�
       top  = run_bench(gguf, ngl=max_ngl, ctx=target.ctx)
       if top.gen_tok_per_sec < target_tps:
           continue                        # 조기 종료 B: 다음 저품질 quant로 이동
+      # ok(ngl) = 남은 ctx_candidates 모두 해당 ngl에서 target_tps 이상
       if hw.gpu_vendor == NONE:
-          return result(quant, ngl=0, top)                # CPU 전용, ngl=0에서 측정한 그대로
+          if ok(0): return result(quant, ngl=0, top)       # CPU 전용, ngl=0에서 측정한 그대로
+          continue
+      if not ok(max_ngl):
+          continue                        # full offload로도 다른 ctx를 못 맞춤
       low = run_bench(gguf, ngl=0, ctx=target.ctx)
-      if low.gen_tok_per_sec >= target_tps:
+      if low.gen_tok_per_sec >= target_tps and ok(0):
           return result(quant, ngl=0, low)                 # 조기 종료 C: GPU 불필요
-      # target_tps를 만족하는 최소 ngl을 [0, max_ngl]에서 이진탐색
+      # 모든 ctx에서 target_tps를 만족하는 최소 ngl을 [0, max_ngl]에서 이진탐색
       # gen_tok_per_sec가 ngl에 따라 감소하지 않는다고 가정하며, 최악에는
       # 이미 목표를 만족한다고 확인한 `top`으로 fallback
       lo, hi, best, calls = 0, max_ngl, top, 0
       while lo < hi and calls < target.ngl_max_calls:
           mid = (lo + hi) // 2
           r = run_bench(gguf, ngl=mid, ctx=target.ctx); calls += 1
-          if r.gen_tok_per_sec >= target_tps: best, hi = r, mid
-          else:                                lo = mid + 1
-      # 남은 ctx_candidates에서 best.ngl 재검증
+          if r.gen_tok_per_sec >= target_tps and ok(mid): best, hi = r, mid
+          else:                                           lo = mid + 1
       return result(quant, ngl=best.candidate.ngl, best)    # 여기 도달한 첫 quant 선택
   raise NoFeasibleConfigError(closest=fastest attempt seen)  # 모든 quant가 조기 종료 B 실패
 ```
@@ -240,10 +243,10 @@ Quant를 품질 내림차순으로 시도해 첫 성공에서 반환하므로 Fi
 고르는 일은 없습니다. 탐색 중 `max_bench_seconds`가 지나면 예외 대신 그때까지
 찾은 최선 결과를 `meets_target=False`로 반환합니다.
 
-`llama-bench` 호출 상한은 `N_quant_survived × (2 + ngl_max_calls +
-len(ctx_candidates))`입니다. `fituna/config.py`의 `TargetSpec` 기본값에서는
-최악의 경우 54회입니다(quant 6개, `ngl_max_calls=6`, ctx 후보 1개: 6 ×
-(2 + 6 + 1)). 실제로는 조기 종료 덕분에 대개 10회 전에 끝납니다.
+`llama-bench` 호출 상한은 `N_quant_survived × (2 + ngl_max_calls) ×
+len(ctx_candidates)`입니다. `fituna/config.py`의 `TargetSpec` 기본값에서는
+최악의 경우 48회입니다(quant 6개, `ngl_max_calls=6`, ctx 후보 1개: 6 ×
+(2 + 6) × 1). 실제로는 조기 종료 덕분에 대개 10회 전에 끝납니다.
 
 ## 파일시스템 산출물
 

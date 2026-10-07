@@ -121,6 +121,14 @@ class BenchResult:
 
 
 @dataclass(frozen=True)
+class BaseLogitsResult:
+    """Reference logits and baseline perplexity measured in one pass."""
+
+    logits_path: Path
+    perplexity: float
+
+
+@dataclass(frozen=True)
 class QualityResult:
     candidate_quant: str  # quality는 quant에만 의존(ngl/ctx 무관)
     perplexity: float
@@ -142,6 +150,8 @@ class SearchResult:
     # 호출 호환). 산출물(gguf)을 실제로 쓰는 두 경로:
     llama_server_command: Optional[list[str]] = None  # OpenAI 호환 로컬 API 서버 커맨드
     modelfile_path: Optional[Path] = None  # --export-ollama로 쓴 Modelfile, 미생성 시 None
+    base_logits_path: Optional[Path] = None
+    base_logits_size_bytes: Optional[int] = None
 
 
 @dataclass(frozen=True)

@@ -277,6 +277,9 @@ keyed by model fingerprint × hardware × llama.cpp build version; `--resume`
 re-answers in under a second. `--quality-metric kld` also writes a
 reference-logits file from the F16 model to `--out`; it grows with vocabulary
 size and `--ppl-chunks` (about 100 MB for 4 chunks of a 49k-vocabulary model).
+The logits file is retained, including without `--resume`, so a later run can
+reuse it with the cached baseline. The final human and JSON reports include
+its path and size; delete it manually when it is no longer needed.
 
 </details>
 

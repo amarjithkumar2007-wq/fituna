@@ -233,6 +233,15 @@ def to_human(result: SearchResult) -> str:
         _artifact_line(result.gguf_path),
         "",
     ]
+    if result.base_logits_path is not None:
+        size = (
+            human_size(result.base_logits_size_bytes)
+            if result.base_logits_size_bytes is not None else "size unknown"
+        )
+        lines += [
+            f"  baseline logits: {result.base_logits_path} ({size}; retained for --resume)",
+            "",
+        ]
 
     # Same order for MEETS TARGET and BEST EFFORT: the file is the
     # deliverable either way, and llama-cli is a check, not the destination.

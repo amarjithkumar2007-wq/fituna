@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from fituna.config import (
+    BaseLogitsResult,
     BenchResult,
     BinaryNotFoundError,
     BinaryPaths,
@@ -21,6 +22,14 @@ from fituna.config import (
     SearchResult,
     TargetSpec,
 )
+
+
+def test_base_logits_result_is_frozen():
+    result = BaseLogitsResult(Path("base.kld"), 6.0)
+    assert result.logits_path == Path("base.kld")
+    assert result.perplexity == 6.0
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        result.perplexity = 7.0
 
 
 # ---------------------------------------------------------------------------

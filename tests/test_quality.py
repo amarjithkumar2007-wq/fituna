@@ -129,11 +129,12 @@ def test_generate_base_logits_success(monkeypatch, tmp_path):
         written = Path(cmd[cmd.index("--kl-divergence-base") + 1])
         assert written.parent == logits_path.parent and written != logits_path
         written.write_bytes(b"logits")
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="Final estimate: PPL = 6.0 +/- 0.1")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    out_path = generate_base_logits(base_gguf, wiki, logits_path, bins, chunks=32)
-    assert out_path == logits_path
+    result = generate_base_logits(base_gguf, wiki, logits_path, bins, chunks=32)
+    assert result.logits_path == logits_path
+    assert result.perplexity == 6.0
     assert logits_path.read_bytes() == b"logits"
     assert list(logits_path.parent.glob("base.kld.tmp.*")) == []
 
@@ -151,6 +152,22 @@ def test_generate_base_logits_missing_files(tmp_path):
     with pytest.raises(FiTunaError, match="wikitext corpus not found"):
         generate_base_logits(base_gguf, wiki, logits_path, bins)
 
+
+def test_generate_base_logits_unparseable_preserves_existing_file(monkeypatch, tmp_path):
+    base, wiki, logits = tmp_path / "base.gguf", tmp_path / "wiki.txt", tmp_path / "base.kld"
+    base.touch()
+    wiki.touch()
+    logits.write_bytes(b"old logits")
+
+    def fake_run(cmd, **kwargs):
+        Path(cmd[cmd.index("--kl-divergence-base") + 1]).write_bytes(b"new logits")
+        return subprocess.CompletedProcess(cmd, 0, stdout="unrecognized output", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(FiTunaError, match="could not parse"):
+        generate_base_logits(base, wiki, logits, _binaries(tmp_path))
+    assert logits.read_bytes() == b"old logits"
+    assert list(tmp_path.glob("base.kld.tmp.*")) == []
 
 def test_compute_kld_success(monkeypatch, tmp_path):
     bins = _binaries(tmp_path)

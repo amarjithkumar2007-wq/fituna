@@ -197,7 +197,7 @@ benches. Every measurement lands in an sqlite3 cache whose key includes the
 llama.cpp build version, so upgrading the engine never silently reuses stale
 numbers.
 
-See how it works in detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+See how it works in detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [Architecture (English)](docs/ARCHITECTURE.en.md)
 
 ## Install
 

@@ -17,6 +17,7 @@ The HF search parser is checked against `tests/fixtures/hf_models_search.json`
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from pathlib import Path
 
@@ -61,7 +62,9 @@ class _FakeStdin:
 
 def _args(out: Path, llama_bin_dir=None):
     return cli._build_parser().parse_args(
-        ["quickstart", "--out", str(out)] + (["--llama-bin-dir", llama_bin_dir] if llama_bin_dir else [])
+        # --lang pinned: the copy assertions below must not depend on the CI locale
+        ["quickstart", "--out", str(out), "--lang", "ko"]
+        + (["--llama-bin-dir", llama_bin_dir] if llama_bin_dir else [])
     )
 
 
@@ -219,8 +222,8 @@ def test_targets_copy_refuses_speed_prediction(wizard, tmp_path, capsys):
     (tmp_path / "c.txt").write_text("hi", encoding="utf-8")
     wizard(_answers())
     out = capsys.readouterr().out
-    assert "속도는 예측하지 않습니다" in out
-    assert "실측값이 아닙니다" in out  # presets labelled as conventional starting points
+    assert "속도는 예측하지 않고" in out
+    assert "실측값이 아닌" in out  # presets labelled as conventional starting points
 
 
 # ---------------------------------------------------------------------------
@@ -279,8 +282,8 @@ def test_curated_shortlist_survives_the_strictest_filter_with_its_badge(wizard, 
     metadata_only = [m for m in quickstart.CURATED if m.license_evidence == quickstart._LICENSE_METADATA_ONLY]
     assert text_verified and metadata_only  # the split is real, not vacuous
     assert out.count("라이선스 원문 확인됨") == len(text_verified)
-    assert out.count("라이선스 메타데이터만 확인 — 원문 파일 없음") == len(metadata_only)
-    assert "기록이지 이 컴퓨터의 예측이 아닙니다" in out
+    assert out.count("라이선스 메타데이터만 확인 (원문 파일 없음)") == len(metadata_only)
+    assert "이 컴퓨터 속도를 예측한 값은 아니에요" in out
     assert "docs/RESULTS.md Run 5" in out  # measured anchor, labelled as a record
 
 
@@ -303,11 +306,11 @@ def test_curated_model_over_detected_memory_stays_selectable_and_is_flagged(
     assert code == 0
     out = capsys.readouterr().out
     assert "SmolLM2-135M" in out and "Qwen3-4B" in out and "Midm-2.0" in out
-    assert "부족합니다" in out  # the verdict line still flags them
-    assert "감지된 메모리보다 큰 모델 2개도 그대로 고를 수 있습니다" in out
+    assert "부족해요" in out  # the verdict line still flags them
+    assert "감지된 메모리보다 큰 모델 2개도 제외하지 않았어요" in out
     # selecting one prints what the F16 stage actually costs, accurately
-    assert "디스크·다운로드 비용은 F16 원본 크기 그대로입니다" in out
-    assert "양자화 단계는 F16을 읽으므로" in out
+    assert "디스크·다운로드 비용은 F16 원본 크기 그대로예요" in out
+    assert "양자화 단계에서 F16을 읽는 동안" in out
     assert "ngl을 0부터" in out
     argv = recorded["argv"]
     assert argv[argv.index("--model") + 1] == str(tmp_path / "Qwen3-4B-Instruct-2507-F16.gguf")
@@ -329,9 +332,9 @@ def test_no_curated_model_fits_detected_memory_all_still_listed(
     assert code == 0
     out = capsys.readouterr().out
     assert "SmolLM2" in out and "Qwen3-4B" in out and "Midm-2.0" in out
-    assert out.count("부족합니다") == len(quickstart.CURATED)
-    assert f"감지된 메모리보다 큰 모델 {len(quickstart.CURATED)}개도 그대로 고를 수 있습니다" in out
-    assert "제외했습니다" not in out
+    assert out.count("부족해요") == len(quickstart.CURATED)
+    assert f"감지된 메모리보다 큰 모델 {len(quickstart.CURATED)}개도 제외하지 않았어요" in out
+    assert "목록에서 제외했어요" not in out
     argv = recorded["argv"]
     assert argv[argv.index("--model") + 1] == str(elsewhere / "m.gguf")
 
@@ -352,7 +355,7 @@ def test_memory_fit_arithmetic_fits_doesnt_and_unknown():
 
     blind = HardwareProfile(GPUVendor.NONE, None, None, 4, 0, "linux")
     assert quickstart.memory_fit(1, blind) is None
-    assert "판정하지 않습니다" in quickstart._memory_fit_line(1, blind)
+    assert "판정하지 않아요" in quickstart._memory_fit_line(1, blind)
 
     cpu_only = HardwareProfile(GPUVendor.NONE, None, None, 4, 8192, "linux")
     assert quickstart.available_memory_mb(cpu_only) == (8192, "RAM")
@@ -362,10 +365,10 @@ def test_memory_fit_arithmetic_fits_doesnt_and_unknown():
 def test_memory_fit_line_states_its_own_assumption():
     gpu = HardwareProfile(GPUVendor.NVIDIA, "RTX 4090", 24564, 16, 65536, "linux")
     line = quickstart._memory_fit_line(4_617_053_184, gpu)
-    assert "들어갑니다" in line
+    assert "들어가요" in line
     assert "18432 MB" not in line  # this hw has 24564 MB
     # the margin is labelled an assumption, once per menu rather than per model
-    assert "실측이 아니며" in quickstart._MEMORY_CAVEAT
+    assert "실측 없이" in quickstart._t("caveat.memory")
 
 
 def test_local_gguf_scan_selects_a_file_on_disk(wizard, tmp_path):
@@ -403,7 +406,7 @@ def test_local_menu_labels_already_quantized_files(wizard, tmp_path, capsys):
     (tmp_path / "c.txt").write_text("hi", encoding="utf-8")
     code, _ = wizard(_answers())
     assert code == 0
-    assert "이미 양자화됨 — run이 경고합니다" in capsys.readouterr().out
+    assert "이미 양자화됨 (run이 경고해요)" in capsys.readouterr().out
 
 
 def test_manual_path_entry_rejects_a_missing_file_then_accepts(wizard, tmp_path, capsys):
@@ -416,7 +419,7 @@ def test_manual_path_entry_rejects_a_missing_file_then_accepts(wizard, tmp_path,
         _answers(model="6", extra=(str(tmp_path / "nope.gguf"), "6", str(real)))
     )
     assert code == 0
-    assert "찾지 못했습니다" in capsys.readouterr().out
+    assert "찾지 못했어요" in capsys.readouterr().out
     argv = recorded["argv"]
     assert argv[argv.index("--model") + 1] == str(real)
 
@@ -505,8 +508,8 @@ def test_hf_search_flow_skips_gated_and_fileless_repos(monkeypatch, tmp_path, ca
     assert str(got) == str(tmp_path / "b-f16.gguf")  # F16 offered first
     out = capsys.readouterr().out
     assert "gated 저장소" in out
-    assert "단일 .gguf 파일이 없습니다" in out
-    assert "업로더가 모델 카드에 적어 넣은 메타데이터" in out
+    assert "단일 .gguf 파일이 없어요" in out
+    assert "업로더가 모델 카드에 적은 메타데이터" in out
 
 
 def test_hf_search_flow_reports_license_excluded_candidates(monkeypatch, tmp_path, capsys):
@@ -528,7 +531,7 @@ def test_hf_search_flow_reports_license_excluded_candidates(monkeypatch, tmp_pat
     got = quickstart._hf_search_flow("commercial", tmp_path)
     assert str(got) == str(tmp_path / "b-f16.gguf")
     out = capsys.readouterr().out
-    assert "(제외) nc/repo — 선택하신 라이선스 조건에 맞지 않습니다" in out
+    assert "(제외) nc/repo: 선택하신 라이선스 조건에 맞지 않아요" in out
     assert "cc-by-nc-4.0" in out
 
 
@@ -615,7 +618,7 @@ def test_corpus_is_not_refetched_when_the_file_already_exists(wizard, monkeypatc
     monkeypatch.setattr(quickstart.corpus, "fetch_corpus", boom)
     code, _ = wizard(_answers()[:3] + ["1", "n", "y"])
     assert code == 0
-    assert "이미 있습니다" in capsys.readouterr().out
+    assert "이미 있어요" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------
@@ -650,7 +653,7 @@ def test_the_command_is_printed_before_it_runs(wizard, tmp_path, capsys):
     # POSIX paths but not on Windows, where backslashes in tmp_path trigger
     # quoting -- asserting the plain join broke both windows-latest CI legs.
     assert "fituna " + shlex.join(recorded["argv"]) in out
-    assert "다음부터는 이 명령을 직접 쓰시면 됩니다" in out
+    assert "다음부터는 이 명령을 직접 쓰셔도 돼요" in out
 
 
 def test_declining_the_run_still_leaves_the_user_the_command(wizard, tmp_path, capsys):
@@ -694,7 +697,7 @@ def test_exit_3_passthrough_prints_the_measured_lower_target(wizard, tmp_path, c
     out = capsys.readouterr().out
     assert "24.53 tok/s" in out
     assert "Q4_K_M" in out and "ngl=33" in out
-    assert "실제로 측정한 값" in out  # measured, not predicted
+    assert "실제로 측정한 숫자" in out  # measured, not predicted
 
 
 def test_exit_3_suppresses_a_timed_out_bench_as_the_lower_target(wizard, tmp_path, capsys):
@@ -768,7 +771,61 @@ def test_ctrl_c_and_eof_are_clean_exits_not_tracebacks(monkeypatch, tmp_path, ca
 
     monkeypatch.setattr("builtins.input", interrupt)
     assert quickstart.run_wizard(_args(tmp_path)) == 1
-    assert "취소했습니다" in capsys.readouterr().out
+    assert "취소했어요" in capsys.readouterr().out
+
+
+# every menu ends with 그만하기 as its last number: preset menu 3+1 -> 5,
+# license 3 -> 4, model 3 curated + search + manual -> 6; and q works at any
+# prompt: a menu, the download y/n, a free-text path
+@pytest.mark.parametrize(
+    "answers",
+    [["5"], ["1", "4"], ["1", "1", "6"], ["Q"], ["1", "1", "q"], ["1", "1", "1", "q"], ["1", "1", "5", "quit"]],
+)
+def test_quit_option_and_q_exit_0_without_running(wizard, capsys, answers):
+    code, recorded = wizard(answers)
+    assert code == 0
+    assert "argv" not in recorded  # nothing assembled, nothing run
+    out = capsys.readouterr().out
+    assert "4) 직접 입력\n  5) 그만하기" in out
+    assert "그만뒀어요" in out
+
+
+def test_english_wizard_has_no_korean_and_same_argv(wizard, monkeypatch, capsys):
+    (Path("c.txt")).write_text("x\n", encoding="utf-8")
+    real = Path("m.gguf")
+    real.write_bytes(b"GGUF")
+    it = iter(["1", "1", "1", "3", "c.txt", "n", "y"])  # model 1 = the local m.gguf
+    monkeypatch.setattr("sys.stdin", _FakeStdin(True))
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(it))
+    monkeypatch.setattr(cli, "_cmd_run", lambda ns: 0)
+    args = cli._build_parser().parse_args(["quickstart", "--out", "out", "--lang", "en"])
+    assert quickstart.run_wizard(args) == 0
+    quickstart._lang = "ko"  # module state; keep later tests on the default
+    out = capsys.readouterr().out
+    assert "[2/6] Targets" in out and "Quit" in out
+    # the only Korean left is the hint pointing Korean users at --lang ko
+    assert re.findall(r"[가-힣]+", out) == ["한국어"]
+
+
+@pytest.mark.parametrize(
+    "env, lang",
+    [
+        ({"LANG": "ko_KR.UTF-8"}, "ko"),
+        ({"LANG": "en_US.UTF-8"}, "en"),
+        ({"LANG": "de_DE"}, "en"),
+        ({"LANG": "C.UTF-8"}, "ko"),
+        ({}, "ko"),
+        ({"LC_ALL": "en_US.UTF-8", "LANG": "ko_KR.UTF-8"}, "en"),  # LC_ALL wins
+    ],
+)
+def test_detect_lang(env, lang):
+    assert quickstart.detect_lang(env) == lang
+
+
+def test_every_string_has_both_languages_and_the_same_placeholders():
+    for key, (ko, en) in quickstart._T.items():
+        assert ko and en, key
+        assert set(re.findall(r"{(\w+)}", ko)) == set(re.findall(r"{(\w+)}", en)), key
 
 
 def test_quickstart_is_a_registered_subcommand_with_run_compatible_flags():

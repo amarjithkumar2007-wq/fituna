@@ -222,6 +222,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "to the assembled `fituna run` (default: search PATH)",
     )
     qs.add_argument("--out", default="./out", help="working/output directory")
+    qs.add_argument(
+        "--lang", choices=quickstart.LANGS, default=None,
+        help="wizard language (default: from LC_ALL/LC_MESSAGES/LANG -- a ko* "
+        "locale, C/POSIX or none gives Korean, any other language English)",
+    )
 
     hp = sub.add_parser(
         "help",

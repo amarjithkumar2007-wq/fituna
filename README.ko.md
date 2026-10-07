@@ -261,7 +261,7 @@ pip install -e fituna
 
 | 명령 | 역할 |
 |---|---|
-| `fituna quickstart` | 6단계 대화형 마법사 — 환경 점검부터 탐색 실행까지. 조립한 `fituna run` 명령을 실행 전에 보여줌 |
+| `fituna quickstart` | 6단계 대화형 마법사 — 환경 점검부터 탐색 실행까지. 조립한 `fituna run` 명령을 실행 전에 보여줌. locale에 따라 한국어/영어(`--lang ko\|en`), 어느 질문에서든 `q`로 종료 |
 | `fituna run` | 탐색 본체. `--model <F16.gguf>` 또는 `--hf repo[:file]`(HF에서 자동 다운로드), `--json` 지원 |
 | `fituna doctor` | 환경 11개 항목 점검(바이너리 실제 실행, 빌드의 GPU 사용 가능 여부 포함). 실패마다 해결 명령 제시 |
 | `fituna fetch-corpus` | 품질 측정용 코퍼스 다운로드 (`--lang en/ko`, 표준 라이브러리만 사용) |

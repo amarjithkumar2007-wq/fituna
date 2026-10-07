@@ -107,26 +107,308 @@ SEARCH_LIMIT = 10
 # uses it says so out loud (see _memory_fit_line).
 MEMORY_MARGIN = 0.8
 
-# [2/6] presets: conventional starting values, NOT measurements. The search
-# is the judge -- an unrealistic target is allowed and simply exits 3 with the
-# measured best effort.
-PRESETS: tuple[tuple[str, float, float, int], ...] = (
-    ("대화형 챗봇 (interactive chat)", 20.0, 5.0, 4096),
-    ("코딩 보조 (coding assistant)", 30.0, 3.0, 8192),
-    ("문서 처리, 긴 입력 (long-document processing)", 15.0, 5.0, 16384),
-)
+# ---------------------------------------------------------------------------
+# UI language. Every user-facing wizard string lives in _T as a (ko, en) pair
+# and is read through _t(). The language is picked once per run by
+# run_wizard (``--lang``, else the locale -- see detect_lang).
+# ---------------------------------------------------------------------------
 
-# [3/6] license needs -> filter predicate (see license_allows).
-LICENSE_NEEDS: tuple[tuple[str, str], ...] = (
-    ("personal", "개인/연구용 (필터 없음)"),
-    # "알려진" is load-bearing: the filter is a deny-list of known
+LANGS = ("ko", "en")
+_lang = "ko"
+
+_T: dict[str, tuple[str, str]] = {
+    "preset.chat": ("대화형 챗봇", "Interactive chat"),
+    "preset.code": ("코딩 보조", "Coding assistant"),
+    "preset.doc": ("문서 처리, 긴 입력", "Long-document processing"),
+    "license.personal": ("개인/연구용 (필터 없음)", "Personal / research (no filter)"),
+    # "알려진"/"known" is load-bearing: the filter is a deny-list of known
     # non-commercial markers, so a model with no license metadata at all --
     # or one whose license string this list has never seen -- stays in the
     # list. Promising "비상업 라이선스 제외" would claim an exclusion the
     # deny-list cannot make for unlabelled models.
-    ("commercial", "상업적 이용 (알려진 비상업 라이선스 제외)"),
-    ("redistribution", "재배포/파생물 배포 (MIT/Apache-2.0/BSD 계열만)"),
+    "license.commercial": (
+        "상업적 이용 (알려진 비상업 라이선스 제외)",
+        "Commercial use (known non-commercial licenses excluded)",
+    ),
+    "license.redistribution": (
+        "재배포/파생물 배포 (MIT/Apache-2.0/BSD 계열만)",
+        "Redistribution / derivatives (MIT/Apache-2.0/BSD family only)",
+    ),
+    "caveat.metadata": (
+        "위 라이선스 값은 업로더가 모델 카드에 적은 메타데이터예요. FiTuna가 원문을 "
+        "확인한 건 아니니, 상업적으로 쓰기 전에 링크의 라이선스 원문을 직접 확인하세요.",
+        "The license values above are metadata the uploader put on the model card; "
+        "FiTuna has not read the license text. Check the linked license yourself "
+        "before any commercial use.",
+    ),
+    "badge.verified": (
+        "[라이선스 원문 확인됨 (가중치 원본 저장소) · docs/AI_MODEL_USAGE.md]",
+        "[license text verified (upstream weights repo) · docs/AI_MODEL_USAGE.md]",
+    ),
+    "badge.metadata_only": (
+        "[라이선스 메타데이터만 확인 (원문 파일 없음) · docs/AI_MODEL_USAGE.md]",
+        "[license metadata only (no license file) · docs/AI_MODEL_USAGE.md]",
+    ),
+    "caveat.memory": (
+        "메모리 판정은 공개된 파일 크기와 감지된 메모리를 견준 단순 산술이에요. 여유 20 %는\n"
+        "  실측 없이 KV 캐시·런타임 몫으로 잡은 가정이고, 기준 파일이 F16/BF16 원본이라\n"
+        "  실제로 돌릴 양자화 파일은 이보다 작아요.",
+        "The memory verdict is plain arithmetic: published file size vs detected memory.\n"
+        "  The 20 % headroom for KV cache and runtime is an assumption, not a measurement,\n"
+        "  and the file compared is the F16/BF16 original -- the quantized file you run is smaller.",
+    ),
+    # Printed when a selected curated model's F16 file is larger than the
+    # memory budget. The verdict line already said so; this says what it
+    # actually costs, because the naive reading ("too big, won't work") is
+    # wrong: the artifact you end up running is the quantized file.
+    "warn.f16": (
+        "  ⚠ 이 모델의 F16 원본은 감지된 메모리 예산보다 커요. 그래도 진행할 수 있으니\n"
+        "    아래 내용을 알고 고르세요:\n"
+        "      · 디스크·다운로드 비용은 F16 원본 크기 그대로예요.\n"
+        "      · 양자화 단계에서 F16을 읽는 동안에는 메모리 압박이 실제로 생겨요.\n"
+        "      · 대신 최종 산출물(예: Q4_K_M)은 훨씬 작고, 탐색은 ngl을 0부터\n"
+        "        올려가며 맞추기 때문에 통째로 올라가지 않아도 측정은 진행돼요.",
+        "  ⚠ This model's F16 original is larger than the detected memory budget. You can\n"
+        "    still go ahead -- just know what it costs:\n"
+        "      · Disk and download cost is the full F16 size.\n"
+        "      · The quantize step reads the F16 file, so memory pressure is real while it runs.\n"
+        "      · The final artifact (e.g. Q4_K_M) is much smaller, and the search raises ngl\n"
+        "        from 0, so measuring works even if the model does not fit on the GPU whole.",
+    ),
+    "no_speed_prediction": (
+        "속도는 예측하지 않고, 고르시면 측정해요.",
+        "FiTuna never predicts throughput -- pick a target and it measures.",
+    ),
+    "model.lang.en": ("영어", "English"),
+    "model.lang.multi": ("다국어", "multilingual"),
+    "model.lang.ko": ("한국어", "Korean"),
+    "model.anchor": (
+        "Apple M3 Pro {tps} tok/s @{quant}, ngl={ngl} (docs/RESULTS.md Run {run})",
+        "Apple M3 Pro {tps} tok/s @{quant}, ngl={ngl} (docs/RESULTS.md Run {run})",
+    ),
+    "corpus.en": ("영어 (wikitext-2)", "English (wikitext-2)"),
+    "corpus.ko": ("한국어 (한국어 위키백과)", "Korean (Korean Wikipedia)"),
+    "mem.unknown": (
+        "메모리: {size} (감지된 메모리 정보가 없어 판정하지 않아요)",
+        "memory: {size} (no detected memory figure, so no verdict)",
+    ),
+    "mem.line": (
+        "메모리: {size} vs 감지된 {label} {mem} ({mb} MB) × {pct} % = {budget} → {verdict}",
+        "memory: {size} vs detected {label} {mem} ({mb} MB) × {pct} % = {budget} → {verdict}",
+    ),
+    "mem.fits": ("들어가요", "fits"),
+    "mem.short": ("부족해요", "too small"),
+    "ask.empty": ("값을 입력해 주세요.", "Please enter a value."),
+    "ask.not_number": ("숫자를 입력해 주세요 (입력하신 값: {raw}).", "Please enter a number (you typed: {raw})."),
+    "ask.not_positive": ("0보다 큰 숫자를 입력해 주세요.", "Please enter a number greater than 0."),
+    "ask.not_int": ("정수를 입력해 주세요.", "Please enter a whole number."),
+    "ask.choice_range": (
+        "1~{count} 사이의 번호를 입력해 주세요 (입력하신 값: {raw}).",
+        "Please enter a number from 1 to {count} (you typed: {raw}).",
+    ),
+    "ask.yes_no": ("y 또는 n 으로 답해 주세요.", "Please answer y or n."),
+    "menu.quit": ("그만하기", "Quit"),
+    "download.prep_fail": ("{dest} 을(를) 쓸 준비를 하지 못했어요: {exc}", "could not prepare {dest} for writing: {exc}"),
+    "download.fail": ("{url} 다운로드에 실패했어요: {exc}", "download of {url} failed: {exc}"),
+    "hf.unreachable": ("HuggingFace 검색 API에 접근하지 못했어요: {exc}", "could not reach the HuggingFace search API: {exc}"),
+    "hf.bad_json": (
+        "HuggingFace 검색 API 응답을 해석하지 못했어요: {exc}",
+        "could not parse the HuggingFace search API response: {exc}",
+    ),
+    "step1.title": ("[1/6] 환경 점검 (fituna doctor)", "[1/6] Environment check (fituna doctor)"),
+    "step1.fail": (
+        "환경 점검에서 FAIL이 나왔어요. 위 '->' 줄의 해결 방법을 먼저 처리하고\n"
+        "`fituna quickstart` 를 다시 실행해 주세요.",
+        "The environment check has a FAIL. Fix it using the '->' lines above, then\n"
+        "run `fituna quickstart` again.",
+    ),
+    "step2.title": ("[2/6] 목표 설정", "[2/6] Targets"),
+    "step2.presets_note": (
+        "아래 프리셋 숫자는 실측값이 아닌 통용 시작값이에요. 판정은 측정으로 해요.",
+        "The preset numbers are common starting points, not measurements -- the search judges them.",
+    ),
+    "step2.too_high_note": (
+        "목표를 과하게 잡아도 괜찮아요. 미달이면 실측한 최선값을 알려 드려요.",
+        "An ambitious target is fine: if it is missed you get the best measured result.",
+    ),
+    "step2.preset_line": (
+        "{label}: {tps} tok/s, 품질손실 {loss} % 이내, ctx {ctx}",
+        "{label}: {tps} tok/s, quality loss ≤ {loss} %, ctx {ctx}",
+    ),
+    "step2.custom": ("직접 입력", "Enter my own"),
+    "pick": ("번호를 고르세요", "Pick a number"),
+    "step2.enter_default": (
+        "(Enter만 누르면 괄호 안 기본값을 써요)",
+        "(press Enter to accept the default in brackets)",
+    ),
+    "step2.ask_tps": ("목표 생성 속도 tok/s — 초당 생성 토큰 수", "Target generation speed, tok/s"),
+    "step2.ask_loss": (
+        "허용 품질손실 % — F16 대비 perplexity 증가 상한",
+        "Max quality loss, % (perplexity increase vs F16)",
+    ),
+    "step2.ask_ctx": ("컨텍스트 길이 ctx — 한 번에 처리할 토큰 수", "Context length ctx, tokens"),
+    "step3.title": ("[3/6] 라이선스 조건: 어떤 용도로 쓰시나요?", "[3/6] License: how will you use the model?"),
+    "step4.title": ("[4/6] 모델 선택", "[4/6] Model"),
+    "model.license": ("라이선스: {license}  {badge}", "license: {license}  {badge}"),
+    "model.weights": ("가중치: {base} / GGUF: {repo}", "weights: {base} / GGUF: {repo}"),
+    "model.anchor_line": (
+        "실측 기록: {anchor} (이 컴퓨터 속도를 예측한 값은 아니에요)",
+        "past measurement: {anchor} (a record, not a prediction for this machine)",
+    ),
+    "step4.local_header": ("이미 있는 .gguf 파일:", ".gguf files already on disk:"),
+    "step4.local_base": ("원본", "original"),
+    "step4.local_quantized": ("이미 양자화됨 (run이 경고해요)", "already quantized (run will warn)"),
+    "step4.curated_header": ("이 프로젝트가 직접 검증한 모델:", "Models verified by this project:"),
+    "step4.license_excluded": (
+        "(라이선스 조건에 맞지 않아 {n}개는 목록에서 제외했어요)",
+        "({n} hidden because they do not meet the license condition)",
+    ),
+    "step4.tight": (
+        "(감지된 메모리보다 큰 모델 {n}개도 제외하지 않았어요. 그대로 고를 수 있어요)",
+        "({n} larger than detected memory are still listed and selectable)",
+    ),
+    "step4.search": ("HuggingFace에서 검색", "Search HuggingFace"),
+    "step4.manual": ("직접 경로 입력", "Enter a path"),
+    "step4.ask_path": (".gguf 파일 또는 HF 포맷 디렉터리 경로", "Path to a .gguf file or HF-format directory"),
+    "not_found": ("{path} 을(를) 찾지 못했어요.", "{path} not found."),
+    "already_here": ("이미 있어요: {path}", "already on disk: {path}"),
+    "curated.url": ("받을 파일: {url}", "file: {url}"),
+    "curated.size": ("게시 시점 크기: {size} → {dest}", "published size: {size} → {dest}"),
+    "curated.license": ("라이선스: {license} (가중치 제공: {base})", "license: {license} (weights by {base})"),
+    "curated.license_owner": (
+        "이 파일에는 FiTuna가 아니라 위 가중치 제공자의 라이선스가 적용돼요.",
+        "This file is under the weight publisher's license above, not FiTuna's.",
+    ),
+    "curated.ask_download": ("내려받을까요?", "Download it?"),
+    "search.ask_query": ("검색어 (예: qwen3 4b)", "Search terms (e.g. qwen3 4b)"),
+    "search.excluded_license": (
+        "(제외) {id}: 선택하신 라이선스 조건에 맞지 않아요 (업로더 기재: {license})",
+        "(excluded) {id}: does not meet your license condition (uploader says: {license})",
+    ),
+    "search.excluded_gated": (
+        "(제외) {id}: gated 저장소라 인증 없이 받을 수 없어요",
+        "(excluded) {id}: gated repo, cannot download without auth",
+    ),
+    "search.excluded_no_gguf": ("(제외) {id}: 단일 .gguf 파일이 없어요", "(excluded) {id}: no single-file .gguf"),
+    "search.no_results": (
+        "조건에 맞는 결과가 없어요. 다른 검색어로 다시 시도해 보세요.",
+        "Nothing matched. Try different search terms.",
+    ),
+    "search.hit": ("{id}  (다운로드 {n}회)", "{id}  ({n} downloads)"),
+    "search.hit_license": ("라이선스(업로더 기재): {license} · {link}", "license (uploader-supplied): {license} · {link}"),
+    "license.none": ("표기 없음", "not stated"),
+    "back": ("취소하고 돌아가기", "Cancel and go back"),
+    "search.pick_file": (
+        "받을 파일을 고르세요 (F16/BF16 원본이 맨 위예요. 이미 양자화된 파일을\n"
+        "  고르면 fituna run 이 경고해요):",
+        "Pick a file (F16/BF16 originals first; fituna run warns if you pick\n"
+        "  an already-quantized file):",
+    ),
+    "search.file_quantized": ("이미 양자화됨", "already quantized"),
+    "search.license_reminder": (
+        "라이선스: {license} (업로더 기재) · {caveat}",
+        "license: {license} (uploader-supplied) · {caveat}",
+    ),
+    "step5.title": ("[5/6] 품질 평가용 코퍼스", "[5/6] Quality corpus"),
+    "step5.why": (
+        "품질손실은 평문 코퍼스의 perplexity 증가율로 측정해요.\n"
+        "  실제로 쓸 언어의 텍스트로 재야 의미가 있어요.",
+        "Quality loss is the perplexity increase on a plain-text corpus --\n"
+        "  measure it on text in the language you will actually use.",
+    ),
+    "step5.own_file": ("이미 있는 텍스트 파일 사용", "Use a text file I already have"),
+    "step5.ask_path": ("UTF-8 텍스트 파일 경로", "Path to a UTF-8 text file"),
+    "step5.exists": ("이미 있어요: {out} (다시 받지 않아요)", "already on disk: {out} (not downloading again)"),
+    "step5.saved": ("{out} 에 {count}행을 저장했어요.", "saved {count} rows to {out}."),
+    "closest.timeout": (
+        "best-effort 후보의 벤치마크가 타임아웃돼서 유효한 실측값이 없어요. "
+        "목표를 얼마로 낮추면 통과하는지도 알려 드릴 수 없어요.",
+        "The best-effort candidate's benchmark timed out, so there is no valid "
+        "measurement -- FiTuna cannot tell you what lower target would pass.",
+    ),
+    "closest.lower": (
+        "목표를 {tps} tok/s 로 낮추면 아래 best-effort 구성({quant}, ngl={ngl}, ctx={ctx})이 "
+        "통과해요. 방금 실제로 측정한 숫자예요.",
+        "Lower the target to {tps} tok/s and the best-effort config below ({quant}, "
+        "ngl={ngl}, ctx={ctx}) passes -- that number was just measured.",
+    ),
+    "step6.title": ("[6/6] 확인 후 실행", "[6/6] Review and run"),
+    "step6.next_time": ("다음부터는 이 명령을 직접 쓰셔도 돼요:", "Next time you can run this command directly:"),
+    "step6.ask_run": ("지금 실행할까요?", "Run it now?"),
+    "step6.not_run": (
+        "실행하지 않았어요. 위 명령을 그대로 복사해 쓰시면 돼요.",
+        "Not run. Copy the command above to run it yourself.",
+    ),
+    "tty.required": (
+        "fituna quickstart는 대화형 터미널(TTY)이 필요해요.\n"
+        "파이프/CI 환경에서는 `fituna run --model <gguf> --target-tps <n> "
+        "--max-quality-loss <n> --quality-corpus <txt>` 를 직접 쓰세요 (`fituna run -h`).",
+        "fituna quickstart needs an interactive terminal (TTY).\n"
+        "In pipes/CI use `fituna run --model <gguf> --target-tps <n> "
+        "--max-quality-loss <n> --quality-corpus <txt>` directly (`fituna run -h`).",
+    ),
+    "intro": ("FiTuna quickstart: 6단계로 실측 구성을 찾아요.", "FiTuna quickstart: six steps to a measured config."),
+    "intro.out": ("작업 디렉터리(--out): {out}", "working directory (--out): {out}"),
+    "intro.quit_hint": (
+        "언제든 q 를 입력하면 그만둘 수 있어요. (English: fituna quickstart --lang en)",
+        "Type q at any prompt to quit. (한국어: fituna quickstart --lang ko)",
+    ),
+    "ask.ollama": ("Ollama용 Modelfile도 만들까요?", "Also write an Ollama Modelfile?"),
+    "cancelled": (
+        "취소했어요. 언제든 `fituna quickstart` 로 다시 시작할 수 있어요.",
+        "Cancelled. Run `fituna quickstart` to start again.",
+    ),
+    "quit": (
+        "그만뒀어요. 언제든 `fituna quickstart` 로 다시 시작할 수 있어요.",
+        "Quit. Run `fituna quickstart` to start again.",
+    ),
+}
+
+
+def _t(key: str, **fields: object) -> str:
+    text = _T[key][LANGS.index(_lang)]
+    return text.format(**fields) if fields else text
+
+
+def detect_lang(env: Optional[dict] = None) -> str:
+    """Korean or English from the POSIX locale (first set of LC_ALL,
+    LC_MESSAGES, LANG). A ``ko*`` locale -> ko; any other *named* language
+    (en_US, de_DE, ...) -> en.
+
+    ponytail: unset, C and POSIX fall back to Korean, the wizard's original
+    language -- many macOS/IDE terminals export C.UTF-8 even on a Korean
+    system. Read AppleLanguages / Windows UI language if that misfires;
+    ``--lang`` overrides either way.
+    """
+    env = os.environ if env is None else env
+    for var in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        value = env.get(var)
+        if value:
+            base = value.split(".")[0].split("@")[0].lower()
+            if base in ("c", "posix"):
+                return "ko"
+            return "ko" if base.startswith("ko") else "en"
+    return "ko"
+
+
+class _Quit(Exception):
+    """The user picked 그만하기/Quit or typed q -- unwinds to run_wizard."""
+
+
+_QUIT_WORDS = frozenset({"q", "quit", "exit"})
+
+# [2/6] presets: conventional starting values, NOT measurements. The search
+# is the judge -- an unrealistic target is allowed and simply exits 3 with the
+# measured best effort. First field is a _T key.
+PRESETS: tuple[tuple[str, float, float, int], ...] = (
+    ("preset.chat", 20.0, 5.0, 4096),
+    ("preset.code", 30.0, 3.0, 8192),
+    ("preset.doc", 15.0, 5.0, 16384),
 )
+
+# [3/6] license needs -> filter predicate (see license_allows). Labels are
+# the _T keys "license.<need>".
+LICENSE_NEEDS: tuple[str, ...] = ("personal", "commercial", "redistribution")
 
 # OSI-approved permissive licenses that allow redistribution and derivative
 # works without a copyleft or field-of-use restriction.
@@ -149,12 +431,6 @@ _NON_COMMERCIAL_MARKERS = (
     "exaone",
 )
 
-_METADATA_CAVEAT = (
-    "위 라이선스 값은 업로더가 모델 카드에 적어 넣은 메타데이터입니다 — "
-    "FiTuna가 원문을 확인한 것이 아닙니다. 상업적으로 쓰기 전에 링크의 "
-    "라이선스 원문을 직접 확인하세요."
-)
-
 # Per-model license evidence. These are two *different* claims and the menu
 # must not blur them -- "원문 확인됨" is exactly the evidence class
 # _METADATA_CAVEAT disclaims the absence of, so it may only be printed where
@@ -164,32 +440,8 @@ _METADATA_CAVEAT = (
 # K-intelligence/Midm-2.0-Mini-Instruct ships LICENSE.txt (MIT text), but
 # HuggingFaceTB/SmolLM2-135M-Instruct ships no license file at all -- for it
 # only the model-card metadata exists. See docs/AI_MODEL_USAGE.md B-1/B-2/B-3.
-_LICENSE_TEXT_VERIFIED = "[라이선스 원문 확인됨(가중치 원본 저장소) — docs/AI_MODEL_USAGE.md]"
-_LICENSE_METADATA_ONLY = "[라이선스 메타데이터만 확인 — 원문 파일 없음, docs/AI_MODEL_USAGE.md]"
-
-_MEMORY_CAVEAT = (
-    "메모리 판정은 '공개된 파일 크기 vs 감지된 메모리' 산술입니다. 여유 20 %는\n"
-    "  KV 캐시·런타임 몫으로 잡은 가정이지 실측이 아니며, 기준 파일은 F16/BF16\n"
-    "  원본이라 실제로 돌릴 양자화 파일은 이보다 작습니다."
-)
-
-# Printed when a selected curated model's F16 file is larger than the memory
-# budget. The verdict line already said so; this says what it actually costs,
-# because the naive reading ("too big, won't work") is wrong: the artifact you
-# end up running is the quantized file.
-_F16_STAGE_WARNING = (
-    "  ⚠ 이 모델의 F16 원본은 감지된 메모리 예산보다 큽니다. 그래도 진행할 수\n"
-    "    있습니다 — 다만 정확히 무엇이 걸리는지 알고 고르십시오:\n"
-    "      · 디스크·다운로드 비용은 F16 원본 크기 그대로입니다.\n"
-    "      · 양자화 단계는 F16을 읽으므로 그 동안 메모리 압박이 실제로 있습니다.\n"
-    "      · 반면 최종 산출물(예: Q4_K_M)은 훨씬 작고, 탐색은 ngl을 0부터\n"
-    "        올려가며 맞추므로 통째로 올라가지 않아도 측정은 진행됩니다."
-)
-
-_NO_SPEED_PREDICTION = (
-    "속도는 예측하지 않습니다 — 고르시면 측정합니다. "
-    "(FiTuna never predicts throughput; it measures it.)"
-)
+_LICENSE_TEXT_VERIFIED = "badge.verified"  # _T keys
+_LICENSE_METADATA_ONLY = "badge.metadata_only"
 
 
 @dataclass(frozen=True)
@@ -206,7 +458,8 @@ class CuratedModel:
     prediction for the user's machine.
     """
 
-    label: str
+    name: str  # "SmolLM2-135M-Instruct (135M" + ", <lang>)" at print time
+    lang: str  # _T key suffix: model.lang.<lang>
     base_model: str  # upstream weights (AI_MODEL_USAGE.md "기반 모델명")
     gguf_repo: str  # repo the bytes actually come from
     filename: str
@@ -216,47 +469,54 @@ class CuratedModel:
     size_bytes: int  # HuggingFace API siblings[].size, snapshot 2026-08-02
     license: str
     license_evidence: str  # one of the _LICENSE_* badges above
-    anchor: str
+    anchor: dict  # fields of the _T "model.anchor" line
+
+    @property
+    def label(self) -> str:
+        return f"{self.name}, {_t('model.lang.' + self.lang)})"
 
 
 CURATED: tuple[CuratedModel, ...] = (
     CuratedModel(
-        label="SmolLM2-135M-Instruct (135M, 영어)",
+        name="SmolLM2-135M-Instruct (135M",
+        lang="en",
         base_model="HuggingFaceTB/SmolLM2-135M-Instruct",
         gguf_repo="bartowski/SmolLM2-135M-Instruct-GGUF",
         filename="SmolLM2-135M-Instruct-f16.gguf",
         size_bytes=270_885_952,
         license="apache-2.0",
         license_evidence=_LICENSE_METADATA_ONLY,
-        anchor="Apple M3 Pro 실측 249.50 tok/s @Q6_K, ngl=30 (docs/RESULTS.md Run 1)",
+        anchor={"tps": "249.50", "quant": "Q6_K", "ngl": 30, "run": 1},
     ),
     CuratedModel(
-        label="Qwen3-4B-Instruct-2507 (4B, 다국어)",
+        name="Qwen3-4B-Instruct-2507 (4B",
+        lang="multi",
         base_model="Qwen/Qwen3-4B-Instruct-2507",
         gguf_repo="unsloth/Qwen3-4B-Instruct-2507-GGUF",
         filename="Qwen3-4B-Instruct-2507-F16.gguf",
         size_bytes=8_051_285_344,
         license="apache-2.0",
         license_evidence=_LICENSE_TEXT_VERIFIED,
-        anchor="Apple M3 Pro 실측 30.81 tok/s @Q4_K_M, ngl=33 (docs/RESULTS.md Run 2)",
+        anchor={"tps": "30.81", "quant": "Q4_K_M", "ngl": 33, "run": 2},
     ),
     CuratedModel(
-        label="Midm-2.0-Mini-Instruct (2.3B, 한국어)",
+        name="Midm-2.0-Mini-Instruct (2.3B",
+        lang="ko",
         base_model="K-intelligence/Midm-2.0-Mini-Instruct",
         gguf_repo="mykor/Midm-2.0-Mini-Instruct-gguf",
         filename="Midm-2.0-Mini-Instruct-BF16.gguf",
         size_bytes=4_617_053_184,
         license="mit",
         license_evidence=_LICENSE_TEXT_VERIFIED,
-        anchor="Apple M3 Pro 실측 44.62 tok/s @Q4_K_M, ngl=48 (docs/RESULTS.md Run 5)",
+        anchor={"tps": "44.62", "quant": "Q4_K_M", "ngl": 48, "run": 5},
     ),
 )
 
 # [5/6] corpus presets -- filenames match the README's manual commands so the
-# printed `fituna run` line stays copy-pasteable afterwards.
-CORPUS_CHOICES: tuple[tuple[str, str, str], ...] = (
-    ("en", "wikitext-2-raw-test.txt", "영어 (wikitext-2)"),
-    ("ko", "kowiki-corpus.txt", "한국어 (한국어 위키백과)"),
+# printed `fituna run` line stays copy-pasteable afterwards. Labels: "corpus.<lang>".
+CORPUS_CHOICES: tuple[tuple[str, str], ...] = (
+    ("en", "wikitext-2-raw-test.txt"),
+    ("ko", "kowiki-corpus.txt"),
 )
 
 
@@ -326,12 +586,17 @@ def _memory_fit_line(size_bytes: int, hw: HardwareProfile) -> str:
     mem_mb, label = available_memory_mb(hw)
     size = report.human_size(size_bytes)
     if mem_mb is None:
-        return f"메모리: {size} — 감지된 메모리 정보가 없어 판정하지 않습니다"
+        return _t("mem.unknown", size=size)
     budget = mem_mb * 1024 * 1024 * MEMORY_MARGIN
-    verdict = "들어갑니다" if memory_fit(size_bytes, hw) else "부족합니다"
-    return (
-        f"메모리: {size} vs 감지된 {label} {report.human_size(mem_mb * 1024 * 1024)}"
-        f" ({mem_mb} MB) × {MEMORY_MARGIN * 100:.0f} % = {report.human_size(budget)} → {verdict}"
+    return _t(
+        "mem.line",
+        size=size,
+        label=label,
+        mem=report.human_size(mem_mb * 1024 * 1024),
+        mb=mem_mb,
+        pct=f"{MEMORY_MARGIN * 100:.0f}",
+        budget=report.human_size(budget),
+        verdict=_t("mem.fits") if memory_fit(size_bytes, hw) else _t("mem.short"),
     )
 
 
@@ -458,8 +723,8 @@ def build_run_argv(
 
 # ---------------------------------------------------------------------------
 # prompting -- every one of these re-prompts forever rather than crashing on
-# garbage; EOF/Ctrl-C is the only way out, and run_wizard turns that into a
-# clean exit 1 instead of a traceback.
+# garbage. Ways out: q (or the 그만하기/Quit menu entry) -> _Quit -> exit 0,
+# EOF/Ctrl-C -> exit 1; run_wizard turns both into one line, no traceback.
 # ---------------------------------------------------------------------------
 
 
@@ -467,11 +732,13 @@ def _ask(text: str, default: str = "") -> str:
     suffix = f" [{default}]" if default else ""
     while True:
         raw = input(f"{text}{suffix}: ").strip()
+        if raw.lower() in _QUIT_WORDS:
+            raise _Quit
         if raw:
             return raw
         if default:
             return default
-        print("  값을 입력해 주세요.")
+        print(f"  {_t('ask.empty')}")
 
 
 def _ask_number(text: str, default: float, *, as_int: bool = False) -> float:
@@ -482,28 +749,36 @@ def _ask_number(text: str, default: float, *, as_int: bool = False) -> float:
         try:
             value = float(raw)
         except ValueError:
-            print(f"  숫자를 입력해 주세요 (입력하신 값: {raw!r}).")
+            print(f"  {_t('ask.not_number', raw=repr(raw))}")
             continue
         if value <= 0 or value != value or value in (float("inf"), float("-inf")):
-            print("  0보다 큰 숫자를 입력해 주세요.")
+            print(f"  {_t('ask.not_positive')}")
             continue
         if as_int and value != int(value):
-            print("  정수를 입력해 주세요.")
+            print(f"  {_t('ask.not_int')}")
             continue
         return int(value) if as_int else value
 
 
+def _print_quit_option(count: int) -> None:
+    """The last line of every menu: number ``count + 1`` quits."""
+    print(f"  {count + 1}) {_t('menu.quit')}")
+
+
 def _ask_choice(text: str, count: int, default: int = 1) -> int:
-    """1-based menu pick. Out-of-range and non-numeric both re-prompt."""
+    """1-based pick among ``count`` options; ``count + 1`` is the 그만하기/Quit
+    entry the caller printed with _print_quit_option. Out-of-range and
+    non-numeric both re-prompt."""
     while True:
         raw = _ask(text, str(default))
         try:
             picked = int(raw)
         except ValueError:
-            print(f"  1~{count} 사이의 번호를 입력해 주세요 (입력하신 값: {raw!r}).")
-            continue
+            picked = 0
+        if picked == count + 1:
+            raise _Quit
         if not 1 <= picked <= count:
-            print(f"  1~{count} 사이의 번호를 입력해 주세요.")
+            print(f"  {_t('ask.choice_range', count=count + 1, raw=repr(raw))}")
             continue
         return picked
 
@@ -515,7 +790,7 @@ def _ask_yes_no(text: str, default: bool = True) -> bool:
             return True
         if raw in ("n", "no", "아니오", "아니요"):
             return False
-        print("  y 또는 n 으로 답해 주세요.")
+        print(f"  {_t('ask.yes_no')}")
 
 
 # ---------------------------------------------------------------------------
@@ -530,7 +805,7 @@ def _download(url: str, dest: Path) -> Path:
         dest.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=dest.parent)
     except OSError as exc:
-        raise FiTunaError(f"{dest} 을(를) 쓸 준비를 하지 못했습니다: {exc}") from exc
+        raise FiTunaError(_t("download.prep_fail", dest=dest, exc=exc)) from exc
 
     tmp = Path(tmp_name)
     try:
@@ -567,7 +842,7 @@ def _download(url: str, dest: Path) -> Path:
         # connection here must return the user to the model menu, not throw
         # away four completed steps.
         tmp.unlink(missing_ok=True)
-        raise FiTunaError(f"{url} 다운로드에 실패했습니다: {exc}") from exc
+        raise FiTunaError(_t("download.fail", url=url, exc=exc)) from exc
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
@@ -660,11 +935,11 @@ def _hf_search(query: str) -> list[HFCandidate]:
         with urllib.request.urlopen(url, timeout=TIMEOUT_SEC) as resp:
             body = resp.read()
     except OSError as exc:
-        raise FiTunaError(f"HuggingFace 검색 API에 접근하지 못했습니다: {exc}") from exc
+        raise FiTunaError(_t("hf.unreachable", exc=exc)) from exc
     try:
         return parse_hf_search(json.loads(body))
     except json.JSONDecodeError as exc:
-        raise FiTunaError(f"HuggingFace 검색 API 응답을 해석하지 못했습니다: {exc}") from exc
+        raise FiTunaError(_t("hf.bad_json", exc=exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -673,7 +948,7 @@ def _hf_search(query: str) -> list[HFCandidate]:
 
 
 def _step_doctor(bin_dir: Optional[Path], out_dir: Path) -> int:
-    print("[1/6] 환경 점검 (fituna doctor)")
+    print(_t("step1.title"))
     print()
     checks = doctor.run_checks(bin_dir, out_dir)
     print(doctor.to_human(checks))
@@ -682,41 +957,43 @@ def _step_doctor(bin_dir: Optional[Path], out_dir: Path) -> int:
     if code != 0:
         # doctor.to_human already printed a remedy line per failing check --
         # repeating them here would just be a second, drift-prone copy.
-        print("환경 점검에서 FAIL이 나왔습니다. 위 '->' 줄의 해결 방법을 먼저 처리한 뒤")
-        print("`fituna quickstart` 를 다시 실행해 주세요.")
+        print(_t("step1.fail"))
     return code
 
 
 def _step_targets() -> tuple[float, float, int]:
-    print("[2/6] 목표 설정")
-    print(f"  {_NO_SPEED_PREDICTION}")
-    print("  아래 프리셋 숫자는 통용되는 시작값이며 실측값이 아닙니다 — 측정이 판정합니다.")
-    print("  목표가 과하면 그대로 두셔도 됩니다: 미달 시 실측된 최선값을 알려드립니다.")
+    print(_t("step2.title"))
+    print(f"  {_t('no_speed_prediction')}")
+    print(f"  {_t('step2.presets_note')}")
+    print(f"  {_t('step2.too_high_note')}")
     print()
-    for i, (label, tps, loss, ctx) in enumerate(PRESETS, start=1):
-        print(f"  {i}) {label}: {tps:g} tok/s, 품질손실 {loss:g} % 이내, ctx {ctx}")
-    print(f"  {len(PRESETS) + 1}) 직접 입력")
+    for i, (key, tps, loss, ctx) in enumerate(PRESETS, start=1):
+        line = _t("step2.preset_line", label=_t(key), tps=f"{tps:g}", loss=f"{loss:g}", ctx=ctx)
+        print(f"  {i}) {line}")
+    print(f"  {len(PRESETS) + 1}) {_t('step2.custom')}")
+    _print_quit_option(len(PRESETS) + 1)
     print()
-    picked = _ask_choice("번호를 고르세요", len(PRESETS) + 1, default=1)
+    picked = _ask_choice(_t("pick"), len(PRESETS) + 1, default=1)
     if picked <= len(PRESETS):
         _label, tps, loss, ctx = PRESETS[picked - 1]
         return tps, loss, ctx
 
-    print("  (Enter 만 누르면 괄호 안 기본값이 쓰입니다)")
-    tps = _ask_number("  목표 생성 속도 tok/s — 초당 생성 토큰 수", 20.0)
-    loss = _ask_number("  허용 품질손실 % — F16 대비 perplexity 증가 상한", 5.0)
-    ctx = int(_ask_number("  컨텍스트 길이 ctx — 한 번에 처리할 토큰 수", 4096, as_int=True))
+    print(f"  {_t('step2.enter_default')}")
+    tps = _ask_number(f"  {_t('step2.ask_tps')}", 20.0)
+    loss = _ask_number(f"  {_t('step2.ask_loss')}", 5.0)
+    ctx = int(_ask_number(f"  {_t('step2.ask_ctx')}", 4096, as_int=True))
     return tps, loss, ctx
 
 
 def _step_license() -> str:
-    print("[3/6] 라이선스 조건 — 어떤 조건으로 쓰시나요?")
+    print(_t("step3.title"))
     print()
-    for i, (_need, label) in enumerate(LICENSE_NEEDS, start=1):
-        print(f"  {i}) {label}")
+    for i, need in enumerate(LICENSE_NEEDS, start=1):
+        print(f"  {i}) {_t('license.' + need)}")
+    _print_quit_option(len(LICENSE_NEEDS))
     print()
-    picked = _ask_choice("번호를 고르세요", len(LICENSE_NEEDS), default=1)
-    return LICENSE_NEEDS[picked - 1][0]
+    picked = _ask_choice(_t("pick"), len(LICENSE_NEEDS), default=1)
+    return LICENSE_NEEDS[picked - 1]
 
 
 def _local_ggufs(out_dir: Path) -> list[Path]:
@@ -737,16 +1014,16 @@ def _local_ggufs(out_dir: Path) -> list[Path]:
 
 def _curated_menu_lines(model: CuratedModel, hw: HardwareProfile) -> list[str]:
     return [
-        f"     라이선스: {model.license}  {model.license_evidence}",
-        f"     가중치: {model.base_model} / GGUF: {model.gguf_repo}",
+        f"     {_t('model.license', license=model.license, badge=_t(model.license_evidence))}",
+        f"     {_t('model.weights', base=model.base_model, repo=model.gguf_repo)}",
         f"     {_memory_fit_line(model.size_bytes, hw)}",
-        f"     실측 기록: {model.anchor} — 기록이지 이 컴퓨터의 예측이 아닙니다",
+        f"     {_t('model.anchor_line', anchor=_t('model.anchor', **model.anchor))}",
     ]
 
 
 def _step_model(need: str, out_dir: Path, hw: HardwareProfile) -> Path:
     """Returns the path to use as ``--model``. Loops until one is chosen."""
-    print("[4/6] 모델 선택")
+    print(_t("step4.title"))
     while True:
         local = _local_ggufs(out_dir)
         license_ok = [m for m in CURATED if license_allows(m.license, need)]
@@ -764,18 +1041,18 @@ def _step_model(need: str, out_dir: Path, hw: HardwareProfile) -> Path:
         print()
         options: list[tuple[str, object]] = []
         if local:
-            print("  이미 가지고 계신 .gguf 파일:")
+            print(f"  {_t('step4.local_header')}")
             for path in local:
                 options.append(("local", path))
                 # --out fills up with FiTuna's own quantized artifacts, so an
                 # unlabelled scan happily offers a Q2_K file as the *base*
                 # model -- llama-quantize then refuses to requantize it. Same
                 # label and ordering as the HF file picker.
-                mark = "원본" if _is_base_precision(path.name) else "이미 양자화됨 — run이 경고합니다"
+                mark = _t("step4.local_base") if _is_base_precision(path.name) else _t("step4.local_quantized")
                 print(f"  {len(options)}) {path}  ({mark})")
         if curated:
-            print("  이 프로젝트가 직접 검증한 모델:")
-            print(f"  ({_MEMORY_CAVEAT})")
+            print(f"  {_t('step4.curated_header')}")
+            print(f"  ({_t('caveat.memory')})")
             for model in curated:
                 options.append(("curated", model))
                 print(f"  {len(options)}) {model.label}")
@@ -783,27 +1060,25 @@ def _step_model(need: str, out_dir: Path, hw: HardwareProfile) -> Path:
                     print(line)
         license_excluded = len(CURATED) - len(license_ok)
         if license_excluded:
-            print(f"  (라이선스 조건에 맞지 않아 {license_excluded}개는 목록에서 제외했습니다)")
+            print(f"  {_t('step4.license_excluded', n=license_excluded)}")
         if tight:
-            print(
-                f"  (감지된 메모리보다 큰 모델 {len(tight)}개도 그대로 고를 수 있습니다 — "
-                "제외하지 않습니다)"
-            )
+            print(f"  {_t('step4.tight', n=len(tight))}")
         options.append(("search", None))
-        print(f"  {len(options)}) HuggingFace에서 검색")
+        print(f"  {len(options)}) {_t('step4.search')}")
         options.append(("manual", None))
-        print(f"  {len(options)}) 직접 경로 입력")
+        print(f"  {len(options)}) {_t('step4.manual')}")
+        _print_quit_option(len(options))
         print()
 
-        kind, payload = options[_ask_choice("번호를 고르세요", len(options), default=1) - 1]
+        kind, payload = options[_ask_choice(_t("pick"), len(options), default=1) - 1]
 
         if kind == "local":
             assert isinstance(payload, Path)
             return payload
         if kind == "manual":
-            path = Path(_ask("  .gguf 파일 또는 HF 포맷 디렉터리 경로"))
+            path = Path(_ask(f"  {_t('step4.ask_path')}"))
             if not path.exists():
-                print(f"  {path} 을(를) 찾지 못했습니다.")
+                print(f"  {_t('not_found', path=path)}")
                 continue
             return path
 
@@ -814,7 +1089,7 @@ def _step_model(need: str, out_dir: Path, hw: HardwareProfile) -> Path:
                 assert isinstance(payload, CuratedModel)
                 if memory_fit(payload.size_bytes, hw) is False:
                     print()
-                    print(_F16_STAGE_WARNING)
+                    print(_t("warn.f16"))
                 chosen = _download_curated(payload, out_dir)
             else:
                 chosen = _hf_search_flow(need, out_dir)
@@ -828,14 +1103,14 @@ def _step_model(need: str, out_dir: Path, hw: HardwareProfile) -> Path:
 def _download_curated(model: CuratedModel, out_dir: Path) -> Optional[Path]:
     dest = out_dir / model.filename
     if dest.exists():
-        print(f"  이미 있습니다: {dest}")
+        print(f"  {_t('already_here', path=dest)}")
         return dest
     url = HF_RESOLVE.format(repo=model.gguf_repo, filename=model.filename)
-    print(f"  받을 파일: {url}")
-    print(f"  게시 시점 크기: {report.human_size(model.size_bytes)} → {dest}")
-    print(f"  라이선스: {model.license} (가중치 제공: {model.base_model})")
-    print("  이 파일의 라이선스는 FiTuna가 아니라 위 가중치 제공자의 것입니다.")
-    if not _ask_yes_no("  내려받을까요?", True):
+    print(f"  {_t('curated.url', url=url)}")
+    print(f"  {_t('curated.size', size=report.human_size(model.size_bytes), dest=dest)}")
+    print(f"  {_t('curated.license', license=model.license, base=model.base_model)}")
+    print(f"  {_t('curated.license_owner')}")
+    if not _ask_yes_no(f"  {_t('curated.ask_download')}", True):
         return None
     return _download(url, dest)
 
@@ -859,7 +1134,7 @@ def _resolved_license_link(candidate: HFCandidate) -> str:
 
 
 def _hf_search_flow(need: str, out_dir: Path) -> Optional[Path]:
-    query = _ask("  검색어 (예: qwen3 4b)")
+    query = _ask(f"  {_t('search.ask_query')}")
     # License-filtered candidates used to be dropped before this loop, so the
     # 제외 report silently under-counted: a search where every hit failed the
     # license filter printed nothing about licenses at all. Filter after
@@ -873,75 +1148,76 @@ def _hf_search_flow(need: str, out_dir: Path) -> Optional[Path]:
     usable = [c for c in candidates if not c.gated and c.gguf_files]
     for c in found:
         if c not in candidates:
-            print(
-                f"  (제외) {c.model_id} — 선택하신 라이선스 조건에 맞지 않습니다"
-                f" (업로더 기재: {c.license or '표기 없음'})"
-            )
+            license_ = c.license or _t("license.none")
+            print(f"  {_t('search.excluded_license', id=c.model_id, license=license_)}")
         elif c.gated:
-            print(f"  (제외) {c.model_id} — gated 저장소라 인증 없이 받을 수 없습니다")
+            print(f"  {_t('search.excluded_gated', id=c.model_id)}")
         elif not c.gguf_files:
-            print(f"  (제외) {c.model_id} — 단일 .gguf 파일이 없습니다")
+            print(f"  {_t('search.excluded_no_gguf', id=c.model_id)}")
     if not usable:
-        print("  조건에 맞는 결과가 없습니다. 다른 검색어로 다시 시도해 보세요.")
+        print(f"  {_t('search.no_results')}")
         return None
 
     print()
     for i, c in enumerate(usable, start=1):
-        print(f"  {i}) {c.model_id}  (다운로드 {c.downloads:,}회)")
-        print(f"     라이선스(업로더 기재): {c.license or '표기 없음'} — {_resolved_license_link(c)}")
-    print(f"  {len(usable) + 1}) 취소하고 돌아가기")
-    print(f"  {_METADATA_CAVEAT}")
+        print(f"  {i}) {_t('search.hit', id=c.model_id, n=f'{c.downloads:,}')}")
+        license_ = c.license or _t("license.none")
+        print(f"     {_t('search.hit_license', license=license_, link=_resolved_license_link(c))}")
+    print(f"  {len(usable) + 1}) {_t('back')}")
+    _print_quit_option(len(usable) + 1)
+    print(f"  {_t('caveat.metadata')}")
     print()
 
-    picked = _ask_choice("번호를 고르세요", len(usable) + 1, default=1)
+    picked = _ask_choice(_t("pick"), len(usable) + 1, default=1)
     if picked == len(usable) + 1:
         return None
     chosen = usable[picked - 1]
 
     files = _prefer_unquantized(chosen.gguf_files)
     print()
-    print("  받을 파일을 고르세요 (F16/BF16 원본이 맨 위 — 이미 양자화된 파일을")
-    print("  넘기면 fituna run 이 경고합니다):")
+    print(f"  {_t('search.pick_file')}")
     for i, name in enumerate(files, start=1):
-        mark = "  원본" if _is_base_precision(name) else "  이미 양자화됨"
-        print(f"  {i}) {name}{mark}")
-    print(f"  {len(files) + 1}) 취소하고 돌아가기")
+        mark = _t("step4.local_base") if _is_base_precision(name) else _t("search.file_quantized")
+        print(f"  {i}) {name}  {mark}")
+    print(f"  {len(files) + 1}) {_t('back')}")
+    _print_quit_option(len(files) + 1)
     print()
-    picked = _ask_choice("번호를 고르세요", len(files) + 1, default=1)
+    picked = _ask_choice(_t("pick"), len(files) + 1, default=1)
     if picked == len(files) + 1:
         return None
 
     filename = files[picked - 1]
     dest = out_dir / filename
     if dest.exists():
-        print(f"  이미 있습니다: {dest}")
+        print(f"  {_t('already_here', path=dest)}")
         return dest
-    print(f"  라이선스: {chosen.license or '표기 없음'} (업로더 기재)  — {_METADATA_CAVEAT}")
+    license_ = chosen.license or _t("license.none")
+    print(f"  {_t('search.license_reminder', license=license_, caveat=_t('caveat.metadata'))}")
     return _download(HF_RESOLVE.format(repo=chosen.model_id, filename=filename), dest)
 
 
 def _step_corpus() -> Path:
-    print("[5/6] 품질 평가용 코퍼스")
-    print("  품질손실은 평문 코퍼스의 perplexity 증가율로 측정합니다 —")
-    print("  실제로 쓸 언어의 텍스트로 재야 의미가 있습니다.")
+    print(_t("step5.title"))
+    print(f"  {_t('step5.why')}")
     print()
-    for i, (_lang, filename, label) in enumerate(CORPUS_CHOICES, start=1):
-        print(f"  {i}) {label} → {filename}")
-    print(f"  {len(CORPUS_CHOICES) + 1}) 이미 가지고 있는 텍스트 파일 사용")
+    for i, (lang, filename) in enumerate(CORPUS_CHOICES, start=1):
+        print(f"  {i}) {_t('corpus.' + lang)} → {filename}")
+    print(f"  {len(CORPUS_CHOICES) + 1}) {_t('step5.own_file')}")
+    _print_quit_option(len(CORPUS_CHOICES) + 1)
     print()
     while True:
-        picked = _ask_choice("번호를 고르세요", len(CORPUS_CHOICES) + 1, default=1)
+        picked = _ask_choice(_t("pick"), len(CORPUS_CHOICES) + 1, default=1)
         if picked == len(CORPUS_CHOICES) + 1:
-            path = Path(_ask("  UTF-8 텍스트 파일 경로"))
+            path = Path(_ask(f"  {_t('step5.ask_path')}"))
             if path.is_file():
                 return path
-            print(f"  {path} 을(를) 찾지 못했습니다.")
+            print(f"  {_t('not_found', path=path)}")
             continue
 
-        lang, filename, _label = CORPUS_CHOICES[picked - 1]
+        lang, filename = CORPUS_CHOICES[picked - 1]
         out = Path(filename)
         if out.exists():
-            print(f"  이미 있습니다: {out} (다시 받지 않습니다)")
+            print(f"  {_t('step5.exists', out=out)}")
             return out
         try:
             count = corpus.fetch_corpus(out, lang=lang, progress_cb=lambda msg: print(f"  {msg}"))
@@ -950,7 +1226,7 @@ def _step_corpus() -> Path:
             # not throw away four completed steps.
             print(f"  {exc}")
             continue
-        print(f"  {out} 에 {count}행을 저장했습니다.")
+        print(f"  {_t('step5.saved', out=out, count=count)}")
         print(f"  {corpus.PRESETS[lang].license_note}")
         return out
 
@@ -968,26 +1244,25 @@ def _lower_target_line(closest) -> Optional[str]:
     if closest is None:
         return None
     if closest.bench.gen_tok_per_sec <= 0:
-        return (
-            "best-effort 후보의 벤치마크가 타임아웃되어 유효한 실측값이 없습니다 — "
-            "목표를 얼마로 낮추면 통과하는지 알려드릴 수 없습니다."
-        )
-    return (
-        f"목표를 {closest.bench.gen_tok_per_sec:.2f} tok/s 로 낮추면 아래 best-effort "
-        f"구성({closest.config.quant}, ngl={closest.config.ngl}, ctx={closest.config.ctx})이 "
-        "통과합니다 — 이 숫자는 방금 실제로 측정한 값입니다."
+        return _t("closest.timeout")
+    return _t(
+        "closest.lower",
+        tps=f"{closest.bench.gen_tok_per_sec:.2f}",
+        quant=closest.config.quant,
+        ngl=closest.config.ngl,
+        ctx=closest.config.ctx,
     )
 
 
 def _step_run(argv: list[str]) -> int:
-    print("[6/6] 확인 후 실행")
+    print(_t("step6.title"))
     print()
-    print("  다음부터는 이 명령을 직접 쓰시면 됩니다:")
+    print(f"  {_t('step6.next_time')}")
     print()
     print(f"    fituna {shlex.join(argv)}")
     print()
-    if not _ask_yes_no("  지금 실행할까요?", True):
-        print("  실행하지 않았습니다. 위 명령을 그대로 복사해 쓰시면 됩니다.")
+    if not _ask_yes_no(f"  {_t('step6.ask_run')}", True):
+        print(f"  {_t('step6.not_run')}")
         return 0
 
     # In-process, through the very same function cli.py dispatches `run` to,
@@ -1020,21 +1295,18 @@ def _step_run(argv: list[str]) -> int:
 def run_wizard(args: argparse.Namespace) -> int:
     """``fituna quickstart``. Returns the exit code (``run``'s, once it gets
     that far), or raises for cli.main() to map -- see _step_run."""
+    global _lang
+    _lang = getattr(args, "lang", None) or detect_lang()
     if not sys.stdin.isatty():
-        print(
-            "fituna quickstart는 대화형 터미널(TTY)이 필요합니다.\n"
-            "파이프/CI 환경에서는 `fituna run --model <gguf> --target-tps <n> "
-            "--max-quality-loss <n> --quality-corpus <txt>` 를 직접 쓰세요 "
-            "(`fituna run -h`).",
-            file=sys.stderr,
-        )
+        print(_t("tty.required"), file=sys.stderr)
         return 1
 
     out_dir = Path(args.out)
     bin_dir = Path(args.llama_bin_dir) if args.llama_bin_dir else None
 
-    print("FiTuna quickstart — 6단계로 실측 구성을 찾습니다.")
-    print(f"작업 디렉터리(--out): {out_dir}")
+    print(_t("intro"))
+    print(_t("intro.out", out=out_dir))
+    print(_t("intro.quit_hint"))
     print()
 
     try:
@@ -1052,7 +1324,7 @@ def run_wizard(args: argparse.Namespace) -> int:
         print()
         quality_corpus = _step_corpus()
         print()
-        export_ollama = _ask_yes_no("Ollama용 Modelfile도 만들까요?", False)
+        export_ollama = _ask_yes_no(_t("ask.ollama"), False)
         # cli.main()'s exit-3 branch reads args.export_ollama to export from
         # the best-effort result; mirror the answer onto our own namespace so
         # that path behaves exactly like `fituna run --export-ollama`.
@@ -1070,9 +1342,13 @@ def run_wizard(args: argparse.Namespace) -> int:
             llama_bin_dir=args.llama_bin_dir,
         )
         return _step_run(argv)
+    except _Quit:
+        print()
+        print(_t("quit"))
+        return 0
     except (EOFError, KeyboardInterrupt):
         print()
-        print("취소했습니다. 언제든 `fituna quickstart` 로 다시 시작하실 수 있습니다.")
+        print(_t("cancelled"))
         return 1
 
 
@@ -1105,9 +1381,9 @@ def _selfcheck() -> None:
     assert memory_fit(60_000_000_000, gpu) is False
     blind = HardwareProfile(_V.NONE, None, None, 4, 0, "linux")
     assert memory_fit(1, blind) is None
-    assert "판정하지 않습니다" in _memory_fit_line(1, blind)
-    assert "들어갑니다" in _memory_fit_line(1, gpu)
-    assert "실측이 아니며" in _MEMORY_CAVEAT
+    assert "판정하지 않아요" in _memory_fit_line(1, blind)
+    assert "들어가요" in _memory_fit_line(1, gpu)
+    assert "실측 없이" in _t("caveat.memory")
     cpu_only = HardwareProfile(_V.NONE, None, None, 4, 8192, "linux")
     assert available_memory_mb(cpu_only) == (8192, "RAM")
 
@@ -1182,8 +1458,13 @@ def _selfcheck() -> None:
     assert [m.license for m in CURATED] == ["apache-2.0", "apache-2.0", "mit"]
     assert all(m.filename.endswith(".gguf") and m.size_bytes > 0 for m in CURATED)
 
-    # 6. the wizard's copy must contain the refusal itself, not just imply it.
-    assert "속도는 예측하지 않습니다" in _NO_SPEED_PREDICTION
+    # 6. the wizard's copy must contain the refusal itself, not just imply it,
+    #    in every language -- and every _T entry has both languages.
+    assert "속도는 예측하지 않고" in _t("no_speed_prediction")
+    assert all(len(pair) == len(LANGS) and all(pair) for pair in _T.values())
+    assert detect_lang({"LANG": "ko_KR.UTF-8"}) == "ko"
+    assert detect_lang({"LANG": "en_US.UTF-8"}) == "en"
+    assert detect_lang({"LANG": "C.UTF-8"}) == "ko"  # see detect_lang
 
     # 7. TTY guard: no TTY -> exit 1, and nothing else runs.
     class _NoTTY:

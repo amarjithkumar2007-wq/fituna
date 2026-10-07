@@ -363,15 +363,15 @@ FiTuna는 **추천까지만** 합니다. 산출물은 탐색 중에 이미 만�
   KL divergence를 보고만 합니다. 다음 단계는 이 값으로 통과/탈락을 판정하는
   것입니다([#49](https://github.com/leeyunseokarchive/fituna/issues/49))
 - **llama.cpp `--fit` 통합** — 최신 llama.cpp의 메모리 자동 맞춤을 탐색의
-  하위 루틴으로 활용해 ngl 초기 후보 선정을 가속
+  하위 루틴으로 활용해 ngl 초기 후보 선정을 가속 ([#42](https://github.com/leeyunseokarchive/fituna/issues/42))
 - **분산 측정 구조** — 원격 서버에서 양자화·품질 평가를 수행하고, 자원이
-  부족한 배포 기기에서는 속도만 측정하는 구조로 확장
+  부족한 배포 기기에서는 속도만 측정하는 구조로 확장 ([#41](https://github.com/leeyunseokarchive/fituna/issues/41))
 - **엣지 디바이스(라즈베리파이, Jetson)** — 기기에서는 `llama-bench`만 후보
   하나씩 실행해, 전체 탐색을 돌릴 용량이 없는 작은 보드도 측정할 수 있게
   함([#56](https://github.com/leeyunseokarchive/fituna/issues/56))
 - **승리 명령 직접 실행(`--launch`)과 LM Studio preset 내보내기** —
-  현재 `--export-ollama`처럼 산출물 경계를 유지한 채 출력 포맷만 추가
-- **멀티 GPU(`--tensor-split`) 탐색** — 단일 GPU 한계 해소
+  현재 `--export-ollama`처럼 산출물 경계를 유지한 채 출력 포맷만 추가 ([#19](https://github.com/leeyunseokarchive/fituna/issues/19))
+- **멀티 GPU(`--tensor-split`) 탐색** — 단일 GPU 한계 해소 ([#11](https://github.com/leeyunseokarchive/fituna/issues/11))
 
 ## 협업 및 관리체계
 

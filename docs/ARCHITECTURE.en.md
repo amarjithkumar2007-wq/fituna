@@ -14,7 +14,7 @@ FiTuna has zero Python runtime dependencies and uses only the standard library.
 
 ## Pipeline Overview
 
-``````mermaid
+```mermaid
 flowchart LR
     subgraph Input
         A["model.gguf<br/>(or HF directory)"]
@@ -41,6 +41,7 @@ flowchart LR
     H --> I[["Result:<br/>quant + ngl + ctx<br/>+ execution command"]]
 
     E & G <--> K[(cache.py<br/>sqlite3<br/>--resume)]
+```
 
 **Step 1** measures the perplexity loss of *all* candidates. Since Step 2 explores candidates in order of **measured** quality, they cannot be sorted using unmeasured values. In practice, both models tested had a conventional Q8_0-first ordering that turned out to be incorrect. **Step 2** actively performs early termination. A quant that misses the target during the full-offload benchmark is discarded without additional measurements, and the first quant that passes is selected. Quants with lower quality than this are not measured.
 
@@ -48,7 +49,7 @@ All subprocess results are stored in an sqlite3 cache keyed by the model fingerp
 
 ## Repository Structure
 
-`````text
+```text
 fituna/
 ├── cli.py         # argparse entry point, exit code mapping (0/1/2/3)
 ├── quickstart.py  # Interactive wizard for assembling run flags (fituna quickstart)
@@ -66,10 +67,11 @@ fituna/
 ├── search.py      # Step 2 search orchestrator
 ├── cache.py       # sqlite3 result cache (--resume)
 └── report.py      # General/JSON result rendering + execution command generation
+```
 
 ## Module Relationships
 
-````text
+```text
                               ┌───────────┐
                               │  cli.py   │  argparse entry point (run /
                               └─────┬─────┘  quickstart / detect-hw /
@@ -112,6 +114,7 @@ fituna/
            SearchResult, DoctorCheck, CorpusPreset, FiTunaError hierarchy).
            Other modules do not define inter-module types separately;
            they import them from here.
+```
 
 The arrows indicate the direction of calls, not imports. `search.py` calls
 `quantize.py`, `bench.py`, `quality.py`, and `cache.py`, but these modules do
@@ -254,6 +257,7 @@ Step 2 — Speed search per quant (highest quality first, first passing quant wi
           else:                                           lo = mid + 1
       return result(quant, ngl=best.candidate.ngl, best)    # select the first quant that reaches this point
   raise NoFeasibleConfigError(closest=fastest attempt seen)  # all quants failed Early termination B
+```
 
 Early termination happens in three places. **A** — a quant that does not pass the quality gate
 never moves on to the speed benchmark. **B** — a quant that misses the target even at full GPU
@@ -284,7 +288,7 @@ return values.
 │                            #   key = sha256(model_fp:corpus:ppl_chunks), a new file is generated if it changes
 ├── Modelfile                # report.export_ollama_modelfile() — only with --export-ollama, atomic
 └── .fituna_cache.sqlite3    # cache.ResultCache — bench_cache / quality_cache, only with --resume
-````
+```
 
 `quantize()` and `ensure_base_gguf()` do not recreate a file if one already exists at the
 target path. Re-running `fituna run` with the same `--out` is therefore cheap even without
@@ -360,4 +364,3 @@ and 1 for any other FAIL. Doctor has no value corresponding to exit code 3.
   (`--launch`) and LM Studio preset export, but neither is in the current release. The MCP
   server already covers the agent path. An agent reads the `fituna_recommend` response and
   decides the next action itself, so no human needs to copy a command.
-`````

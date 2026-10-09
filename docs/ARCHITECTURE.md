@@ -196,12 +196,19 @@ Perplexity는 `ngl`이나 `ctx`가 아닌 `quant`에만 의존하므로 품질�
 
 ```
 1단계 — 품질 사전 filter(quant마다 llama-perplexity 한 번 호출)
-  baseline_ppl = compute_perplexity(base F16 GGUF)      [cache, 한 번만 계산]
+  baseline_ppl = _BASELINE_QUANT_KEY에 cache된 기준 PPL, 없으면 None
+  if quality_metric == "kld":
+      if 기준 logits 파일이 없거나 baseline_ppl is None:
+          baseline_ppl = generate_base_logits(base F16 GGUF).perplexity
+  elif baseline_ppl is None:
+      baseline_ppl = compute_perplexity(base F16 GGUF)
+  두 품질 지표 모두 같은 _BASELINE_QUANT_KEY에 baseline_ppl을 cache
+      # Cache 읽기·쓰기는 --resume으로 cache를 활성화했을 때만 수행.
   for quant in quant_candidates ∩ list_supported_quant_types():
       gguf = quantize(base_gguf, quant)
       q = evaluate_quality(quant, gguf, baseline_ppl, wikitext_path)
-          # --quality-metric kld: F16 기준 logits를 한 번 만들어 두고(파일 재사용),
-          # 같은 호출에서 KLD와 PPL(Q)를 함께 읽음. KLD는 보고용이고
+          # --quality-metric kld: F16 기준 logits를 재사용하며 같은 호출에서
+          # KLD와 PPL(Q)를 함께 읽음. KLD는 보고용이고
           # quality_loss_pct는 PPL(Q)에서 계산(#49). PPL(Q)가 없으면 FiTunaError
       q.quality_loss_pct <= max_quality_loss_pct이면 quant 유지
   quality_filtered = 통과한 quant를 원래 품질 내림차순(Q8_0 → Q2_K),
@@ -265,6 +272,10 @@ len(ctx_candidates)`입니다. `fituna/config.py`의 `TargetSpec` 기본값에�
 ├── Modelfile                # report.export_ollama_modelfile() — --export-ollama에서만, atomic
 └── .fituna_cache.sqlite3    # cache.ResultCache — bench_cache / quality_cache, --resume에서만
 ```
+
+`.kld` 기준 logits 파일은 실행 후에도 남습니다. 최종 일반 보고서와 JSON
+보고서에는 이 파일의 경로와 크기(`base_logits_path`와
+`base_logits_size_bytes`)가 포함됩니다.
 
 `quantize()`와 `ensure_base_gguf()`는 목표 경로에 파일이 이미 있으면 다시 만들지
 않습니다. 같은 `--out`으로 `fituna run`을 다시 실행하면 `--resume`이 없어도

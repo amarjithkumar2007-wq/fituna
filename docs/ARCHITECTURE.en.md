@@ -218,12 +218,19 @@ once per quant and is not measured again while searching for speed.
 
 ```text
 Step 1 — Quality pre-filter (one llama-perplexity call per quant)
-  baseline_ppl = compute_perplexity(base F16 GGUF)      [cache, calculated only once]
+  baseline_ppl = cached baseline PPL under _BASELINE_QUANT_KEY, or None
+  if quality_metric == "kld":
+      if reference logits file is missing or baseline_ppl is None:
+          baseline_ppl = generate_base_logits(base F16 GGUF).perplexity
+  elif baseline_ppl is None:
+      baseline_ppl = compute_perplexity(base F16 GGUF)
+  cache baseline_ppl under the same _BASELINE_QUANT_KEY for either metric
+      # Cache reads/writes apply when --resume enables the cache.
   for quant in quant_candidates ∩ list_supported_quant_types():
       gguf = quantize(base_gguf, quant)
       q = evaluate_quality(quant, gguf, baseline_ppl, wikitext_path)
-          # --quality-metric kld: generate F16 reference logits once (reuse the file),
-          # then read both KLD and PPL(Q) from the same call. KLD is for reporting,
+          # --quality-metric kld: reuse the F16 reference logits and read
+          # both KLD and PPL(Q) from the same call. KLD is for reporting,
           # while quality_loss_pct is calculated from PPL(Q) (#49). If PPL(Q) is
           # unavailable, raise FiTunaError.
       q.quality_loss_pct <= max_quality_loss_pct → keep the quant
@@ -289,6 +296,10 @@ return values.
 ├── Modelfile                # report.export_ollama_modelfile() — only with --export-ollama, atomic
 └── .fituna_cache.sqlite3    # cache.ResultCache — bench_cache / quality_cache, only with --resume
 ```
+
+The `.kld` reference logits file is kept after the run. The final human-readable
+and JSON reports include its path and size (`base_logits_path` and
+`base_logits_size_bytes`).
 
 `quantize()` and `ensure_base_gguf()` do not recreate a file if one already exists at the
 target path. Re-running `fituna run` with the same `--out` is therefore cheap even without

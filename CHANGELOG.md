@@ -23,8 +23,19 @@
   줄었습니다. 기준 PPL은 이전처럼 캐시에 저장되어 `--resume`에서 재사용됩니다. 기본
   `ppl` 모드의 동작은 같습니다([#74](https://github.com/leeyunseokarchive/fituna/pull/74), @GreedyC, #48).
 
+### 수정
+
+- **캐시에서 읽어 온 기준 PPL을 매번 캐시에 다시 쓰던 문제.** #74 이후 캐시를 쓰는
+  실행(`--resume`, MCP 서버)에서는 기준 PPL을 캐시에서 읽어 온 경우에도 같은 값을 다시
+  썼습니다. 이제 그 실행에서 새로 측정했을 때만 씁니다. 결과와 출력은 바뀌지 않습니다.
+  테스트도 캐시 내부(`_conn`)에 직접 접근하지 않도록 정리했습니다([#80](https://github.com/leeyunseokarchive/fituna/pull/80), @amarjithkumar2007-wq, #77).
+
 ### 문서
 
+- **아키텍처 문서에 KLD 기준값 1회 측정(#74) 반영** — 1단계 의사코드가 KLD 모드에서는
+  `generate_base_logits()`, 그 밖에는 `compute_perplexity()`에서 기준 PPL을 얻는 흐름을
+  설명하고, `.kld` 기준 logits 파일을 남겨 두며 최종 보고서에 경로와 크기를 보여 준다는
+  내용을 한국어판과 영어판에 추가했습니다([#82](https://github.com/leeyunseokarchive/fituna/pull/82), @Golden007-prog, #76).
 - **`docs/ARCHITECTURE.en.md` 추가** — 아키텍처 문서의 영어 번역입니다. 한국어 원문과
   서로 링크하고 README에서 연결합니다([#73](https://github.com/leeyunseokarchive/fituna/pull/73), @codedbypraneetha, #38 일부).
 - **README 로드맵 항목에 추적 이슈 링크 추가**([#72](https://github.com/leeyunseokarchive/fituna/pull/72), @kittu181707, #70).

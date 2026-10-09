@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from fituna.config import (
+    BaseLogitsResult,
     BenchResult,
     BinaryPaths,
     CandidateConfig,
@@ -444,7 +445,8 @@ def test_bench_timeout_treated_as_below_target_not_abort(monkeypatch, tmp_path):
     assert result.config.quant == "Q4_K_M"
 
 
-def test_search_with_kld_quality_metric(monkeypatch, tmp_path):
+@pytest.mark.parametrize("resume", [False, True])
+def test_search_with_kld_quality_metric(monkeypatch, tmp_path, resume):
     """When quality_metric='kld', search() generates baseline logits and passes
     metric='kld' and base_logits_path to evaluate_quality()."""
     generated_logits: list[Path] = []
@@ -452,13 +454,15 @@ def test_search_with_kld_quality_metric(monkeypatch, tmp_path):
 
     _patch(monkeypatch, "quantize", "quantize",
            lambda base, quant, work, bins, fp: tmp_path / f"m-{quant}.gguf")
-    _patch(monkeypatch, "quality", "compute_perplexity",
-           lambda *a, **k: 6.0)
+    def unexpected_baseline(*a, **k):
+        pytest.fail("KLD must not run a separate baseline pass")
+
+    _patch(monkeypatch, "quality", "compute_perplexity", unexpected_baseline)
 
     def fake_gen_logits(base, wiki, logits_path, bins, chunks=None):
         generated_logits.append(logits_path)
         logits_path.touch()
-        return logits_path
+        return BaseLogitsResult(logits_path=logits_path, perplexity=6.0)
 
     _patch(monkeypatch, "quality", "generate_base_logits", fake_gen_logits)
 
@@ -495,19 +499,43 @@ def test_search_with_kld_quality_metric(monkeypatch, tmp_path):
         quant_candidates=["Q4_K_M"],
         quality_metric="kld",
     )
+    from fituna.cache import ResultCache
+    cache = ResultCache(tmp_path / "cache.sqlite") if resume else None
+    wiki = tmp_path / "wiki.txt"
+    wiki.touch()
+    model = _model_info(tmp_path)
     result = search(
         target,
-        _model_info(tmp_path),
+        model,
         _hw(GPUVendor.NONE),
         _binaries(tmp_path),
         tmp_path,
-        tmp_path / "wiki.txt",
+        wiki,
+        cache=cache,
     )
     assert result.meets_target
     assert len(generated_logits) == 1
     assert evaluated_with_metric == ["kld"]
     assert result.quality.metric == "kld"
     assert result.quality.kld == 0.003
+    assert result.base_logits_path == generated_logits[0]
+    assert result.base_logits_size_bytes == 0
+    if cache is not None:
+        search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path), tmp_path, wiki, cache=cache)
+        assert len(generated_logits) == 1
+        generated_logits[0].unlink()
+        search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path), tmp_path, wiki, cache=cache)
+        assert len(generated_logits) == 2
+        cache._conn.execute("DELETE FROM quality_cache WHERE quant = '__baseline__'")
+        cache._conn.commit()
+        search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path), tmp_path, wiki, cache=cache)
+        assert len(generated_logits) == 3
+        generated_logits[0].unlink()
+        cache._conn.execute("DELETE FROM quality_cache WHERE quant = '__baseline__'")
+        cache._conn.commit()
+        search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path), tmp_path, wiki, cache=cache)
+        assert len(generated_logits) == 4
+        cache.close()
 
 
 

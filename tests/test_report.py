@@ -37,6 +37,18 @@ def _binaries(dir_path: Path) -> BinaryPaths:
     )
 
 
+def test_baseline_logits_in_final_reports(tmp_path):
+    logits = tmp_path / "base.kld"
+    result = _result(tmp_path / "candidate.gguf", base_logits_path=logits,
+                      base_logits_size_bytes=100000000)
+    human = to_human(result)
+    assert f"baseline logits: {logits} (100.0 MB; retained for --resume)" in human
+    data = json.loads(to_json(result))
+    assert data["base_logits_path"] == str(logits)
+    assert data["base_logits_size_bytes"] == 100000000
+    assert "baseline logits:" not in to_human(_result(tmp_path / "candidate.gguf"))
+
+
 def _result(gguf: Path, **overrides) -> SearchResult:
     cand = CandidateConfig(quant="Q4_K_M", ngl=33, ctx=4096)
     kwargs = dict(
@@ -325,4 +337,3 @@ def test_human_includes_kld_when_present(tmp_path):
     payload = json.loads(to_json(res_kld))
     assert payload["quality"]["metric"] == "kld"
     assert payload["quality"]["kld"] == 0.003412
-

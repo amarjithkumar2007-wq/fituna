@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from fituna.config import BinaryPaths, FiTunaError, QualityResult
+from fituna.config import BaseLogitsResult, BinaryPaths, FiTunaError, QualityResult
 
 # llama-perplexity has no built-in timeout of its own and a full
 # wikitext-2 pass on a large model can run long; 30 min is a generous default
@@ -143,9 +143,10 @@ def generate_base_logits(
     logits_path: Path,
     binaries: BinaryPaths,
     chunks: Optional[int] = None,
-) -> Path:
+) -> BaseLogitsResult:
     """Run `llama-perplexity -m <base_gguf_path> -f <wikitext_path> --kl-divergence-base <logits_path>`
     to record reference logits from the unquantized baseline model.
+    Returns the logits path and the baseline perplexity from the same run.
     """
     if not base_gguf_path.exists():
         raise FiTunaError(f"Base GGUF file not found: {base_gguf_path}")
@@ -201,8 +202,15 @@ def generate_base_logits(
         raise FiTunaError(
             f"llama-perplexity exited with code {proc.returncode} generating logits for {base_gguf_path.name}:\n{tail}"
         )
+    ppl = _parse_perplexity(output)
+    if ppl is None:
+        tmp_path.unlink(missing_ok=True)
+        raise FiTunaError(
+            f"could not parse 'Final estimate: PPL = ...' while generating logits "
+            f"for {base_gguf_path.name}:\n{output.strip()[-2000:]}"
+        )
     tmp_path.replace(logits_path)
-    return logits_path
+    return BaseLogitsResult(logits_path=logits_path, perplexity=ppl)
 
 
 def compute_kld(

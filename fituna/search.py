@@ -188,25 +188,8 @@ def search(
         )
         if cached_baseline is not None:
             baseline_ppl = cached_baseline.perplexity
-    if baseline_ppl is None:
-        progress("computing baseline perplexity on base GGUF")
-        baseline_ppl = compute_perplexity(
-            model_info.base_gguf_path, wikitext_path, binaries, target.ppl_chunks
-        )
-        if cache is not None:
-            cache.put_quality(
-                model_fp,
-                QualityResult(
-                    candidate_quant=_BASELINE_QUANT_KEY,
-                    perplexity=baseline_ppl,
-                    baseline_perplexity=baseline_ppl,
-                    quality_loss_pct=0.0,
-                ),
-                target.ppl_chunks,
-                corpus_fp,
-            )
-
     base_logits_path: Optional[Path] = None
+    base_logits_size_bytes: Optional[int] = None
     if target.quality_metric == "kld":
         # The reference logits depend on the base model, the corpus and the
         # chunk count; key the filename on all three so changing
@@ -220,15 +203,35 @@ def search(
             f"{model_fp}:{corpus_key}:{target.ppl_chunks}".encode("utf-8")
         ).hexdigest()[:12]
         base_logits_path = work_dir / f"{model_info.base_gguf_path.stem}.{logits_key}.kld"
-        if not base_logits_path.exists():
+        if not base_logits_path.exists() or baseline_ppl is None:
             progress("generating baseline logits for KLD measurement on base GGUF")
-            generate_base_logits(
+            logits_result = generate_base_logits(
                 model_info.base_gguf_path,
                 wikitext_path,
                 base_logits_path,
                 binaries,
                 target.ppl_chunks,
             )
+            baseline_ppl = logits_result.perplexity
+        base_logits_size_bytes = base_logits_path.stat().st_size
+
+    if baseline_ppl is None:
+        progress("computing baseline perplexity on base GGUF")
+        baseline_ppl = compute_perplexity(
+            model_info.base_gguf_path, wikitext_path, binaries, target.ppl_chunks
+        )
+    if cache is not None:
+        cache.put_quality(
+            model_fp,
+            QualityResult(
+                candidate_quant=_BASELINE_QUANT_KEY,
+                perplexity=baseline_ppl,
+                baseline_perplexity=baseline_ppl,
+                quality_loss_pct=0.0,
+            ),
+            target.ppl_chunks,
+            corpus_fp,
+        )
 
     best_effort: Optional[SearchResult] = None
     best_effort_speed = float("-inf")
@@ -344,6 +347,8 @@ def search(
                         cand_gguf, bench.candidate, binaries
                     ),
                     meets_target=False,
+                    base_logits_path=base_logits_path,
+                    base_logits_size_bytes=base_logits_size_bytes,
                 )
 
         def build_result(bench: BenchResult) -> SearchResult:
@@ -357,6 +362,8 @@ def search(
                     cand_gguf, bench.candidate, binaries
                 ),
                 meets_target=True,
+                base_logits_path=base_logits_path,
+                base_logits_size_bytes=base_logits_size_bytes,
             )
 
         def verify_other_ctx(ngl: int) -> bool:

@@ -202,8 +202,10 @@ Perplexity는 `ngl`이나 `ctx`가 아닌 `quant`에만 의존하므로 품질�
           baseline_ppl = generate_base_logits(base F16 GGUF).perplexity
   elif baseline_ppl is None:
       baseline_ppl = compute_perplexity(base F16 GGUF)
-  두 품질 지표 모두 같은 _BASELINE_QUANT_KEY에 baseline_ppl을 cache
-      # Cache 읽기·쓰기는 --resume으로 cache를 활성화했을 때만 수행.
+  이번 실행에서 baseline_ppl을 새로 측정했다면:
+      두 품질 지표 모두 같은 _BASELINE_QUANT_KEY에 cache
+      # Cache 읽기·쓰기는 cache를 쓸 때만 수행
+      # (CLI는 --resume, MCP 서버는 항상 사용).
   for quant in quant_candidates ∩ list_supported_quant_types():
       gguf = quantize(base_gguf, quant)
       q = evaluate_quality(quant, gguf, baseline_ppl, wikitext_path)

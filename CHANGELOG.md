@@ -7,23 +7,45 @@
 
 ## [미출시]
 
+### 추가
+
+- **KLD 모드 결과에 기준 logits 파일의 경로와 크기 표시.** `--quality-metric kld`는
+  원본(F16) 모델의 기준 logits 파일을 `--out`에 만듭니다(어휘 4.9만 개 모델, 4청크 기준
+  약 100 MB). 이 파일의 경로와 크기를 최종 결과 화면과 JSON(`base_logits_path`,
+  `base_logits_size_bytes`)에 보여 줍니다. 파일은 다음 실행에서 재사용하도록 남겨 두며,
+  필요 없으면 직접 지우면 됩니다([#74](https://github.com/leeyunseokarchive/fituna/pull/74), @GreedyC, #48).
+
+### 변경
+
+- **KLD 모드에서 원본 모델을 한 번만 측정합니다.** 이전에는 원본 모델에
+  `llama-perplexity`를 두 번 실행했습니다(기준 PPL 한 번, 기준 logits 한 번). 이제
+  logits를 만드는 실행에서 기준 PPL도 함께 읽으므로 원본 모델 전체를 다시 도는 시간이
+  줄었습니다. 기준 PPL은 이전처럼 캐시에 저장되어 `--resume`에서 재사용됩니다. 기본
+  `ppl` 모드의 동작은 같습니다([#74](https://github.com/leeyunseokarchive/fituna/pull/74), @GreedyC, #48).
+
+### 문서
+
+- **`docs/ARCHITECTURE.en.md` 추가** — 아키텍처 문서의 영어 번역입니다. 한국어 원문과
+  서로 링크하고 README에서 연결합니다([#73](https://github.com/leeyunseokarchive/fituna/pull/73), @codedbypraneetha, #38 일부).
+- **README 로드맵 항목에 추적 이슈 링크 추가**([#72](https://github.com/leeyunseokarchive/fituna/pull/72), @kittu181707, #70).
+
 ## [0.3.6] — 2026-10-07
 
 ### 추가
 
 - **`fituna quickstart` 그만하기.** 모든 선택 메뉴의 마지막 번호가 "그만하기"이고,
   어느 질문에서든 `q`(`quit`, `exit`)를 입력하면 바로 끝납니다. 종료코드는 0입니다
-  (Ctrl+C·EOF는 이전처럼 1). 이전에는 Ctrl+C 말고는 중간에 나갈 방법이 없었습니다.
+  (Ctrl+C·EOF는 이전처럼 1). 이전에는 Ctrl+C 말고는 중간에 나갈 방법이 없었습니다([#68](https://github.com/leeyunseokarchive/fituna/pull/68)).
 - **`fituna quickstart` 영어 지원.** `--lang ko|en`으로 지정하거나, 지정하지 않으면
   locale(`LC_ALL` → `LC_MESSAGES` → `LANG`)을 따릅니다. `ko*`는 한국어, 그 밖의 언어
   (`en_US`, `de_DE` …)는 영어입니다. locale이 없거나 `C`/`POSIX`이면 이전과 같이
-  한국어입니다. 첫 화면에 다른 언어로 바꾸는 명령을 안내합니다.
+  한국어입니다. 첫 화면에 다른 언어로 바꾸는 명령을 안내합니다([#68](https://github.com/leeyunseokarchive/fituna/pull/68)).
 
 ### 변경
 
 - **`fituna quickstart` 안내 문구를 다듬었습니다.** 말투를 해요체로 통일하고, 대시(—)로
   이어 붙인 부가 설명과 "~이지 ~아닙니다" 식 반복을 줄였습니다. 단계 제목
-  (`[1/6] 환경 점검` … `[6/6] 확인 후 실행`)과 메뉴 구성은 그대로입니다.
+  (`[1/6] 환경 점검` … `[6/6] 확인 후 실행`)과 메뉴 구성은 그대로입니다([#68](https://github.com/leeyunseokarchive/fituna/pull/68)).
 
 ## [0.3.5] — 2026-10-06
 
@@ -33,12 +55,18 @@
   llama-server·llama-cli 명령과 `ollama create … -f` 안내가 경로를 따옴표 없이
   출력했습니다. 이제 셸에 그대로 붙여 넣을 수 있게 인용합니다(POSIX는 `shlex.join`,
   Windows는 `subprocess.list2cmdline`). `--json`의 `run_command`·`llama_server_command`는
-  원래 인자 배열이라 바뀌지 않습니다.
+  원래 인자 배열이라 바뀌지 않습니다([#67](https://github.com/leeyunseokarchive/fituna/pull/67)).
 - **탐색 중 Ctrl+C를 누르면 Python traceback이 출력되던 문제.** 이제 한 줄 안내
   ("interrupted … re-run with --resume to continue")를 출력하고 종료코드 130으로 끝납니다.
-  llama.cpp 하위 프로세스는 같은 SIGINT를 받아 함께 종료됩니다.
+  llama.cpp 하위 프로세스는 같은 SIGINT를 받아 함께 종료됩니다([#67](https://github.com/leeyunseokarchive/fituna/pull/67)).
 
 ## [0.3.4] — 2026-10-06
+
+### 추가
+
+- **양자화 모듈 테스트** — `tests/test_quantize.py`가 완성된 출력 파일 게시, 캐시 재사용,
+  모델별 파일 구분, 비었거나 없거나 실패한 출력, 실행 오류 종류, 남은 임시 파일 정리를
+  mock subprocess로 검사합니다. 동작 변경은 없습니다([#65](https://github.com/leeyunseokarchive/fituna/pull/65), @nawaaaaaAaar, #10 일부).
 
 ### 수정
 
@@ -48,9 +76,11 @@
   가능한 구성이 있는데도 "no quant/ngl/ctx combination met" 으로 끝날 수 있었습니다.
   이제 `ngl` 이진탐색의 판정 기준 자체가 "모든 ctx에서 목표 달성"입니다.
   실측(SmolLM2-135M Q8_0, `--target-tps 180 --ctx 2048,8192`, M3 Pro): 0.3.3은 종료코드 3,
-  0.3.4는 `ngl=29`로 MEETS TARGET.
+  0.3.4는 `ngl=29`로 MEETS TARGET([#66](https://github.com/leeyunseokarchive/fituna/pull/66)).
 
-## [0.3.3] — 2026-10-05
+## [0.3.3] — 2026-10-06
+
+0.3.3의 항목은 모두 [#64](https://github.com/leeyunseokarchive/fituna/pull/64)에서 바뀌었습니다.
 
 ### 추가
 
@@ -89,6 +119,12 @@
 
 ## [0.3.2] — 2026-10-05
 
+### 추가
+
+- **llama.cpp 실행 파일 탐색 테스트** — `tests/test_binaries.py`가 버전 출력,
+  지원 양자화 타입 목록, fallback, 실행 파일이 없을 때의 오류를 mock subprocess로
+  검사합니다([#62](https://github.com/leeyunseokarchive/fituna/pull/62), @GreedyC, #10 일부).
+
 ### 수정
 
 - **full offload 측정에서 layer 하나가 CPU에 남던 문제** — llama.cpp는 출력층을
@@ -114,12 +150,6 @@
 - **MCP 서버가 버전을 0.2.0으로 보고하던 문제** — `initialize` 응답의
   `serverInfo.version`이 고정 문자열이었습니다. 이제 `fituna.__version__`을 씁니다
   ([#61](https://github.com/leeyunseokarchive/fituna/pull/61)).
-
-### 추가
-
-- **llama.cpp 실행 파일 탐색 테스트** — `tests/test_binaries.py`가 버전 출력,
-  지원 양자화 타입 목록, fallback, 실행 파일이 없을 때의 오류를 mock subprocess로
-  검사합니다([#62](https://github.com/leeyunseokarchive/fituna/pull/62), @GreedyC, #10 일부).
 
 ## [0.3.1] — 2026-10-02
 
@@ -153,6 +183,17 @@
   ([#46](https://github.com/leeyunseokarchive/fituna/pull/46), @PandaHUN777).
   `tests/test_quality.py`는 실제 llama.cpp(b11342) 출력을 캡처한 fixture로
   KLD·PPL 해석을 검사합니다(#45).
+
+### 변경
+
+- **영어 README를 기본으로** — `README.md`를 영어로 바꾸고 한국어 README는
+  `README.ko.md`로 옮겼습니다.
+- **PyPI 배포 자동화** — GitHub Release를 발행하면 Trusted Publishing으로 PyPI 배포가
+  실행됩니다. 태그와 패키지 버전이 다르면 배포하지 않습니다([#53](https://github.com/leeyunseokarchive/fituna/pull/53)).
+
+### 문서
+
+- **`CODE_OF_CONDUCT.md`에 비공개 신고 연락처 추가**([#43](https://github.com/leeyunseokarchive/fituna/pull/43), @mhaye9545, #40).
 
 ## [0.2.1] — 2026-08-27
 
@@ -356,12 +397,11 @@ subprocess 계층을 의도적으로 모의 처리하므로, 실제 llama.cpp �
 - `--wikitext`를 `--quality-corpus`로 바꿨습니다. 이전 이름을 alias로
   유지하므로 호환성을 깨는 변경은 아닙니다.
 
+[미출시]: https://github.com/leeyunseokarchive/fituna/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.6
 [0.3.5]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.5
-
 [0.3.4]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.4
-
 [0.3.3]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.3
-
 [0.3.2]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.2
 [0.3.1]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.1
 [0.3.0]: https://github.com/leeyunseokarchive/fituna/releases/tag/v0.3.0

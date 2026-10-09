@@ -224,8 +224,10 @@ Step 1 — Quality pre-filter (one llama-perplexity call per quant)
           baseline_ppl = generate_base_logits(base F16 GGUF).perplexity
   elif baseline_ppl is None:
       baseline_ppl = compute_perplexity(base F16 GGUF)
-  cache baseline_ppl under the same _BASELINE_QUANT_KEY for either metric
-      # Cache reads/writes apply when --resume enables the cache.
+  if baseline_ppl was measured in this run:
+      cache it under the same _BASELINE_QUANT_KEY for either metric
+      # Cache reads/writes apply only when a cache is in use
+      # (CLI: --resume; the MCP server always uses one).
   for quant in quant_candidates ∩ list_supported_quant_types():
       gguf = quantize(base_gguf, quant)
       q = evaluate_quality(quant, gguf, baseline_ppl, wikitext_path)

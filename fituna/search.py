@@ -182,6 +182,7 @@ def search(
 
     # Baseline perplexity: one call, cached across runs via the sentinel key.
     baseline_ppl: Optional[float] = None
+    baseline_measured = False
     if cache is not None:
         cached_baseline = cache.get_quality(
             model_fp, _BASELINE_QUANT_KEY, target.ppl_chunks, corpus_fp
@@ -213,6 +214,7 @@ def search(
                 target.ppl_chunks,
             )
             baseline_ppl = logits_result.perplexity
+            baseline_measured = True
         base_logits_size_bytes = base_logits_path.stat().st_size
 
     if baseline_ppl is None:
@@ -220,7 +222,8 @@ def search(
         baseline_ppl = compute_perplexity(
             model_info.base_gguf_path, wikitext_path, binaries, target.ppl_chunks
         )
-    if cache is not None:
+        baseline_measured = True
+    if cache is not None and baseline_measured:
         cache.put_quality(
             model_fp,
             QualityResult(

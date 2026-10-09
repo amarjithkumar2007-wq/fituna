@@ -451,6 +451,7 @@ def test_search_with_kld_quality_metric(monkeypatch, tmp_path, resume):
     metric='kld' and base_logits_path to evaluate_quality()."""
     generated_logits: list[Path] = []
     evaluated_with_metric: list[str] = []
+    baseline_writes: list[float] = []
 
     _patch(monkeypatch, "quantize", "quantize",
            lambda base, quant, work, bins, fp: tmp_path / f"m-{quant}.gguf")
@@ -501,6 +502,15 @@ def test_search_with_kld_quality_metric(monkeypatch, tmp_path, resume):
     )
     from fituna.cache import ResultCache
     cache = ResultCache(tmp_path / "cache.sqlite") if resume else None
+    if cache is not None:
+        original_put_quality = ResultCache.put_quality
+
+        def record_put_quality(self, model_fp, result, *args, **kwargs):
+            if result.candidate_quant == "__baseline__":
+                baseline_writes.append(result.perplexity)
+            return original_put_quality(self, model_fp, result, *args, **kwargs)
+
+        monkeypatch.setattr(ResultCache, "put_quality", record_put_quality)
     wiki = tmp_path / "wiki.txt"
     wiki.touch()
     model = _model_info(tmp_path)
@@ -523,18 +533,22 @@ def test_search_with_kld_quality_metric(monkeypatch, tmp_path, resume):
     if cache is not None:
         search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path), tmp_path, wiki, cache=cache)
         assert len(generated_logits) == 1
+        assert baseline_writes == [6.0], "cache hits must not rewrite the baseline"
         generated_logits[0].unlink()
         search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path), tmp_path, wiki, cache=cache)
         assert len(generated_logits) == 2
-        cache._conn.execute("DELETE FROM quality_cache WHERE quant = '__baseline__'")
-        cache._conn.commit()
+        assert baseline_writes == [6.0, 6.0], "regenerated logits must refresh the baseline"
+        cache.close()
+        cache = ResultCache(tmp_path / "missing-baseline.sqlite")
         search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path), tmp_path, wiki, cache=cache)
         assert len(generated_logits) == 3
+        assert baseline_writes == [6.0, 6.0, 6.0]
         generated_logits[0].unlink()
-        cache._conn.execute("DELETE FROM quality_cache WHERE quant = '__baseline__'")
-        cache._conn.commit()
+        cache.close()
+        cache = ResultCache(tmp_path / "missing-baseline-and-logits.sqlite")
         search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path), tmp_path, wiki, cache=cache)
         assert len(generated_logits) == 4
+        assert baseline_writes == [6.0, 6.0, 6.0, 6.0]
         cache.close()
 
 
@@ -607,3 +621,56 @@ def test_no_gpu_search_benches_the_config_it_recommends(monkeypatch, tmp_path):
     assert probed == [0]
     assert result.config.ngl == 0
     assert result.bench.candidate.ngl == 0
+
+
+def test_ppl_resume_does_not_rewrite_cached_baseline(monkeypatch, tmp_path):
+    from fituna.cache import ResultCache
+
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "binaries", "list_supported_quant_types", lambda bins: ["Q4_K_M"])
+    _patch(
+        monkeypatch, "bench", "run_bench",
+        lambda gguf_path, ngl, ctx, target, binaries, timeout_sec=300: BenchResult(
+            candidate=CandidateConfig(quant="Q4_K_M", ngl=ngl, ctx=ctx),
+            prompt_tok_per_sec=100.0, gen_tok_per_sec=50.0,
+            vram_used_mb=None, raw_stdout="{}",
+        ),
+    )
+    baseline_writes: list[float] = []
+    original_put_quality = ResultCache.put_quality
+
+    def record_put_quality(self, model_fp, result, *args, **kwargs):
+        if result.candidate_quant == "__baseline__":
+            baseline_writes.append(result.perplexity)
+        return original_put_quality(self, model_fp, result, *args, **kwargs)
+
+    monkeypatch.setattr(ResultCache, "put_quality", record_put_quality)
+    target = TargetSpec(
+        model_path=tmp_path / "m.gguf", target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0, quant_candidates=("Q4_K_M",),
+    )
+    model = _model_info(tmp_path)
+    wiki = tmp_path / "wiki.txt"
+    wiki.touch()
+    cache_path = tmp_path / "cache.sqlite"
+    cache = ResultCache(cache_path)
+    try:
+        result = search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path),
+                        tmp_path, wiki, cache=cache)
+        assert result.meets_target
+        assert baseline_writes == [6.0]
+    finally:
+        cache.close()
+
+    def unexpected_baseline(*args, **kwargs):
+        pytest.fail("resume must reuse the cached baseline")
+
+    _patch(monkeypatch, "quality", "compute_perplexity", unexpected_baseline)
+    cache = ResultCache(cache_path)
+    try:
+        resumed = search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path),
+                         tmp_path, wiki, cache=cache)
+        assert resumed.meets_target
+        assert baseline_writes == [6.0], "cache hits must not rewrite the baseline"
+    finally:
+        cache.close()

@@ -360,7 +360,7 @@ is tracked on [GitHub Issues](https://github.com/leeyunseokarchive/fituna/issues
 The codebase is small, dependency-free and contract-first — start at
 [fituna/config.py](fituna/config.py). The full unit suite and a 3-OS ×
 2-Python CI matrix guard it. See [CONTRIBUTING.md](CONTRIBUTING.md) and
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+[docs/DEVELOPMENT.en.md](docs/DEVELOPMENT.en.md).
 
 ## License
 

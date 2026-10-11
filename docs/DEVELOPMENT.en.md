@@ -1,4 +1,4 @@
-[Korean original](./DEVELOPMENT.md)
+[한국어 원문](./DEVELOPMENT.md)
 
 # Development and Validation
 
@@ -130,11 +130,11 @@ and installs pytest, then runs `pytest -q` and all 17 module self-checks. Import
 something FiTuna has not declared causes the installation step to fail, so this
 installation also checks the zero-runtime-dependency constraint.
 
-3.11 is the minimum version declared in `pyproject.toml`, and 3.13 is the current
-release. Windows is included in the matrix because FiTuna handles paths and tool
-output, both of which differ on Windows. The first actual Windows CI run caught a
-test failure caused by `\U` in a Windows path being treated as an invalid regular
-expression escape.
+3.11 is the minimum version declared in `pyproject.toml`, and 3.13 is the newest
+version tested in CI and also builds the PyPI release. Windows is included in the
+matrix because FiTuna handles paths and tool output, both of which differ on
+Windows. The first actual Windows CI run caught a test failure caused by `\U` in a
+Windows path being treated as an invalid regular expression escape.
 
 Linters, formatters, type checkers, and a coverage gate are deliberately absent
 from CI. The package includes `py.typed` and uses type annotations, but there is

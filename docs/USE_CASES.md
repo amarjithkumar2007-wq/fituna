@@ -1,4 +1,4 @@
-[English](./USE_CASES.en.md)
+[English version](./USE_CASES.en.md)
 
 # FiTuna 사용 시나리오
 

@@ -1,4 +1,4 @@
-[Korean original](./USE_CASES.md)
+[한국어 원문](./USE_CASES.md)
 
 # FiTuna Use Cases
 

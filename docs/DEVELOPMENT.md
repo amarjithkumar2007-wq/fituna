@@ -1,4 +1,4 @@
-[English](./DEVELOPMENT.en.md)
+[English version](./DEVELOPMENT.en.md)
 
 # 개발 및 검증 방법
 
@@ -121,7 +121,8 @@ Job은 6개이며 `fail-fast: false`라 한 platform의 실패가 다른 platfor
 `pytest -q`와 모듈 자체 점검 17개를 실행합니다. FiTuna가 선언하지 않은 것을
 import하면 설치 단계에서 실패하므로 이 설치 자체도 런타임 의존성 0개 검사입니다.
 
-3.11은 `pyproject.toml`에 선언한 최저 버전이고 3.13은 현재 릴리스입니다.
+3.11은 `pyproject.toml`에 선언한 최저 버전이고 3.13은 CI가 검증하는 최신 버전이며
+PyPI 릴리스 빌드에도 쓰입니다.
 FiTuna가 경로와 도구 출력을 처리하며 이 둘이 Windows에서 다르기 때문에 matrix에
 Windows를 넣었습니다. 첫 실제 Windows CI 실행은 Windows 경로의 `\U`가 잘못된
 정규식 escape라서 생긴 test 실패를 잡았습니다.

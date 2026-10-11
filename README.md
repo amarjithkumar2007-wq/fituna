@@ -142,7 +142,7 @@ Three models of different sizes, each given a target. In all three runs the
 
 Apple M3 Pro, llama.cpp build 9960. Full logs and run-to-run variance:
 [docs/RESULTS.md](docs/RESULTS.md) · Scenarios:
-[docs/USE_CASES.md](docs/USE_CASES.md) · Reproduce on NVIDIA/Linux (free T4):
+[docs/USE_CASES.en.md](docs/USE_CASES.en.md) · Reproduce on NVIDIA/Linux (free T4):
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/leeyunseokarchive/fituna/blob/main/notebooks/colab_nvidia_verification.ipynb)
 
 ## Couldn't you just ask a chatbot?

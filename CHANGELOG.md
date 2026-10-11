@@ -38,6 +38,13 @@
   내용을 한국어판과 영어판에 추가했습니다([#82](https://github.com/leeyunseokarchive/fituna/pull/82), @Golden007-prog, #76).
 - **`docs/ARCHITECTURE.en.md` 추가** — 아키텍처 문서의 영어 번역입니다. 한국어 원문과
   서로 링크하고 README에서 연결합니다([#73](https://github.com/leeyunseokarchive/fituna/pull/73), @codedbypraneetha, #38 일부).
+- **`docs/DEVELOPMENT.en.md` 추가** — 개발 및 검증 방법 문서의 영어 번역입니다. 한국어 원문과
+  서로 링크하고 영어 README의 개발 가이드 링크가 영어판을 가리킵니다([#84](https://github.com/leeyunseokarchive/fituna/pull/84), @amarjithkumar2007-wq, #38 일부).
+- **`docs/USE_CASES.en.md` 추가** — 사용 시나리오 문서의 영어 번역입니다. 한국어 원문과
+  서로 링크하고 영어 README의 시나리오 링크가 영어판을 가리킵니다([#85](https://github.com/leeyunseokarchive/fituna/pull/85), @amarjithkumar2007-wq, #38 일부).
+- **번역 문서의 언어 링크 문구 통일, 개발 문서의 Python 3.13 설명 정정** — 번역 문서 맨 위
+  링크를 아키텍처 문서와 같은 `English version` / `한국어 원문`으로 맞췄습니다. "3.13은 현재
+  릴리스"라는 문장은 CI가 검증하는 최신 버전이자 PyPI 릴리스 빌드 버전이라는 뜻으로 고쳤습니다.
 - **README 로드맵 항목에 추적 이슈 링크 추가**([#72](https://github.com/leeyunseokarchive/fituna/pull/72), @kittu181707, #70).
 
 ## [0.3.6] — 2026-10-07

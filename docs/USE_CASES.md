@@ -1,3 +1,5 @@
+[English](./USE_CASES.en.md)
+
 # FiTuna 사용 시나리오
 
 실측 수치가 붙은 시나리오는 실제 측정값(`docs/RESULTS.md`)이고, 그 외는

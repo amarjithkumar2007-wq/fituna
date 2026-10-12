@@ -127,7 +127,7 @@ quality loss). The quantized model on the `artifact:` line was already
 produced during the search. Re-running the same command with `--resume`
 reuses its stored measurements. Absolute numbers and the winning quant can
 vary by machine and by run —
-[measured run-to-run variance](docs/RESULTS.md#run-to-run-variance-measured-not-hidden).
+[measured run-to-run variance](docs/RESULTS.en.md#run-to-run-variance-measured-not-hidden).
 
 ## Measured results
 
@@ -261,7 +261,7 @@ fituna fetch-corpus --lang ko --out kowiki-corpus.txt --rows 500   # Korean Wiki
 ```
 
 In Run 3, switching the corpus alone changed the verdict the tool returned
-([measurement and caveats](docs/RESULTS.md#run-3--english-vs-korean-quality-corpus-same-model-same-quants)).
+([measurement and caveats](docs/RESULTS.en.md#run-3--english-vs-korean-quality-corpus-same-model-same-quants)).
 Both presets are CC BY-SA 3.0; `fetch-corpus` prints the license notice on
 completion.
 
@@ -329,12 +329,12 @@ you copy and run (and an Ollama Modelfile with `--export-ollama`) — actually
 serving the model stays llama.cpp's job
 ([rationale](docs/ARCHITECTURE.md#why-this-shape)). Current limitations:
 
-- **Results are valid only on the machine that ran them** — FiTuna never extrapolates another machine's numbers from a spec sheet. Need a config for a different machine? Run FiTuna there (it's a cross-platform CLI). Machines disagreeing is exactly why measurement beats estimation — [same model, opposite verdicts on M3 Pro vs T4](docs/RESULTS.md#run-4--nvidia-tesla-t4-linux-google-colab)
+- **Results are valid only on the machine that ran them** — FiTuna never extrapolates another machine's numbers from a spec sheet. Need a config for a different machine? Run FiTuna there (it's a cross-platform CLI). Machines disagreeing is exactly why measurement beats estimation — [same model, opposite verdicts on M3 Pro vs T4](docs/RESULTS.en.md#run-4--nvidia-tesla-t4-linux-google-colab)
 - **Single GPU only** — no `--tensor-split`
 - **No Windows AMD auto-detection** — pass `--gpu amd --vram-mb <N>`
 - **Quality = perplexity on the corpus you choose** — a proxy; measure on text resembling your workload. `--quality-metric kld` adds KL divergence to the report, but the pass/fail gate is still perplexity ([#49](https://github.com/leeyunseokarchive/fituna/issues/49))
-- **Verdicts depend on `--ppl-chunks`** — re-measure candidates close to your budget ([measured effect](docs/RESULTS.md#how-big-is-a-perplexity-gap-the-error-bar-we-had-been-discarding))
-- **Benchmarks are thermally sensitive** — verdicts within a few tok/s of target are marginal ([variance analysis](docs/RESULTS.md#run-to-run-variance-measured-not-hidden))
+- **Verdicts depend on `--ppl-chunks`** — re-measure candidates close to your budget ([measured effect](docs/RESULTS.en.md#how-big-is-a-perplexity-gap-the-error-bar-we-had-been-discarding))
+- **Benchmarks are thermally sensitive** — verdicts within a few tok/s of target are marginal ([variance analysis](docs/RESULTS.en.md#run-to-run-variance-measured-not-hidden))
 - **Real-hardware E2E covers macOS · Linux** — Windows is unit-tested and CI-run
 
 ## Roadmap

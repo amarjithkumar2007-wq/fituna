@@ -12,17 +12,11 @@ of the results.
 
 | | |
 |---|---|
-| 하드웨어 | Apple M3 Pro, 18 GB 통합 메모리(macOS, Apple Silicon) |
+| Hardware | Apple M3 Pro, 18 GB unified memory (macOS, Apple Silicon) |
 | llama.cpp | Homebrew build 9960 (`a935fbffe`) |
-| 품질 corpus | wikitext-2-raw-v1 test split(`--ppl-chunks 32`), Run 3과 5는 한국어 Wikipedia도 측정 |
-| FiTuna | 이 저장소 — Run 1~4는 `pip install -e .`, Run 5는 저장소 안에서 `python3.13 -m fituna`로 실행(같은 package라 동작 차이 없음) |
+| Quality corpus | wikitext-2-raw-v1 test split(`--ppl-chunks 32`), Runs 3 and 5 also measure Korean Wikipedia |
+| FiTuna | This repository — Runs 1~4 use `pip install -e .`, Run 5 runs inside the repository with `python3.13 -m fituna` (the same package, with no behavior difference) |
 
-
-The table records the hardware, llama.cpp build, quality corpus, and FiTuna setup.
-Runs 1-3 and 5 use an Apple M3 Pro with 18 GB unified memory. Run 3 and Run 5 also
-measure Korean Wikipedia. The installation and invocation details remain in the
-original table. Tables and command/log blocks are kept verbatim to preserve the
-measurement record.
 
 Run 4 repeats the same experiment on **NVIDIA Tesla T4 (Linux, Google Colab)**.
 
@@ -41,18 +35,13 @@ fituna run --model SmolLM2-135M-Instruct-f16.gguf \
 ```
 
 
-| 후보 | 파일 크기(MiB) | 실측 gen tok/s(full offload, ctx 4096) | F16 대비 실측 품질 손실 | 목표 240 판정 |
+| Candidate | File size (MiB) | Measured gen tok/s (full offload, ctx 4096) | Measured quality loss relative to F16 | Target 240 verdict |
 |---|---|---|---|---|
-| Q8_0 | 138 MiB | 205.91 | 0.29 % | **미달** — 조기 종료 B |
-| **Q6_K** | 132 MiB | **249.50** | **0.53 %** | **통과(ngl=30)** |
-| Q5_K_M | 107 MiB | 233.26 | 3.32 % | 조기 종료로 측정하지 않음 |
-| Q4_K_M | 101 MiB | 244.34 | 4.74 % | 조기 종료로 측정하지 않음 |
+| Q8_0 | 138 MiB | 205.91 | 0.29 % | **Below target** — Early exit B |
+| **Q6_K** | 132 MiB | **249.50** | **0.53 %** | **Pass (ngl=30)** |
+| Q5_K_M | 107 MiB | 233.26 | 3.32 % | Not measured due to early exit |
+| Q4_K_M | 101 MiB | 244.34 | 4.74 % | Not measured due to early exit |
 
-
-The columns are candidate, file size (MiB), measured generation tok/s (full offload,
-ctx 4096), measured quality loss relative to F16, and verdict for the target of
-240. 미달 means below target; 통과 means passes; 조기 종료 means early exit. The
-last two verdict cells say they were not measured because of early exit.
 
 *(Unit correction: this column was previously labelled "MB", but the figures were
 binary MiB from the start. Remeasuring regenerated files with `ls -l` gave Q8_0
@@ -98,18 +87,13 @@ fituna run --model Qwen3-4B-Instruct-2507-F16.gguf \
 ```
 
 
-| 후보 | 파일 크기 | F16 대비 실측 품질 손실 | 실측 gen tok/s(full offload, ctx 4096) | 목표 30 판정 |
+| Candidate | File size | Measured quality loss relative to F16 | Measured gen tok/s (full offload, ctx 4096) | Target 30 verdict |
 |---|---|---|---|---|
-| Q6_K | 3.1 GB | **−0.30 %**(F16보다 좋은 PPL) | 28.48 | 미달 — 조기 종료 B |
-| Q8_0 | 4.0 GB | +0.07 % | 24.22 | 미달 — 조기 종료 B |
-| Q5_K_M | 2.7 GB | +1.53 % | 29.59 | 0.41 tok/s 미달 |
-| **Q4_K_M** | 2.3 GB | **+1.73 %** | 36.50 | **통과 — 최소 ngl=33 → 30.81 tok/s** |
+| Q6_K | 3.1 GB | **−0.30 %** (better PPL than F16) | 28.48 | Below target — Early exit B |
+| Q8_0 | 4.0 GB | +0.07 % | 24.22 | Below target — Early exit B |
+| Q5_K_M | 2.7 GB | +1.53 % | 29.59 | 0.41 tok/s below target |
+| **Q4_K_M** | 2.3 GB | **+1.73 %** | 36.50 | **Pass — minimum ngl=33 → 30.81 tok/s** |
 
-
-The table records candidate, file size, measured quality loss relative to F16,
-measured generation tok/s (full offload, ctx 4096), and target-30 verdict. The
-negative Q6_K loss means better PPL than F16. The winning row records the minimum
-ngl and its measured speed.
 
 This run shows three things a lookup table cannot know.
 
@@ -150,15 +134,13 @@ should be used? The same Qwen3-4B-Instruct-2507 quantized files were measured wi
 `--ppl-chunks 32` on the English default, the wikitext-2 test split, and on Korean
 Wikipedia (`wikimedia/wikipedia` `20231101.ko`, first 500 articles, CC BY-SA).
 
-| Quant | 품질 손실(영어 wikitext) | 품질 손실(한국어 kowiki) |
+| Quant | Quality loss (English wikitext) | Quality loss (Korean kowiki) |
 |---|---|---|
 | Q6_K | −0.30 % | −0.06 % |
 | Q8_0 | +0.07 % | −0.01 % |
 | Q5_K_M | +1.53 % | +0.48 % |
 | Q4_K_M | +1.73 % | +0.77 % |
 
-
-The two quality-loss columns are English wikitext and Korean kowiki.
 
 Two findings from the measurements:
 
@@ -206,17 +188,13 @@ parsing path, `fituna
 detect-hw` correctly detected `nvidia / Tesla T4 / 15360 MB VRAM /
 linux` automatically.
 
-| 후보 | 실측 품질 손실(T4/CUDA) | macOS/Metal | 실측 gen tok/s(T4) | macOS | 목표 240 판정 |
+| Candidate | Measured quality loss (T4/CUDA) | macOS/Metal | Measured gen tok/s (T4) | macOS | Target 240 verdict |
 |---|---|---|---|---|---|
-| Q8_0 | — | — | 202.70 | 205.91 | 미달 |
-| Q6_K | 0.83 % | 0.53 % | **205.50** | 249.50 | 미달 → **최선 결과** |
-| Q5_K_M | — | — | 172.03 | 233.26 | 미달 |
-| Q4_K_M | **5.22 % → 5% gate 탈락(조기 종료 A)** | 4.74 % → 통과 | bench하지 않음 | 244.34 | — |
+| Q8_0 | — | — | 202.70 | 205.91 | Below target |
+| Q6_K | 0.83 % | 0.53 % | **205.50** | 249.50 | Below target → **Best effort** |
+| Q5_K_M | — | — | 172.03 | 233.26 | Below target |
+| Q4_K_M | **5.22 % → 5% gate rejected (Early exit A)** | 4.74 % → Pass | Not benchmarked | 244.34 | — |
 
-
-The table compares candidate, measured quality loss on T4/CUDA and macOS/Metal,
-measured generation speed on T4 and macOS, and the target-240 verdict. 최선 결과
-means best-effort result; bench하지 않음 means not benchmarked.
 
 Cold search took **61 seconds**; a `--resume` rerun reached the same output in
 **1.45 seconds**. The result is BEST EFFORT (Q6_K, 205.50 tok/s, 0.83% loss).
@@ -315,7 +293,7 @@ the first winner and made every candidate go through the quality gate and a
 full-offload benchmark. From cold, this took **4 minutes 59.81 seconds** and
 returned exit code 3 (`BEST EFFORT`) with this measured full-offload range:
 
-| Quant | 실측 gen tok/s @ ngl=48 |
+| Quant | Measured gen tok/s @ ngl=48 |
 |---|---|
 | Q8_0 | 34.26 |
 | Q5_K_M | 38.76 |
@@ -346,16 +324,13 @@ fituna run --model Midm-2.0-Mini-Instruct-BF16.gguf \
 ```
 
 
-| 후보 | 파일 크기 | 품질 손실(한국어 kowiki) | 품질 손실(영어 wikitext) | 실측 gen tok/s(ngl=48, ctx 4096) | 목표 40 판정 |
+| Candidate | File size | Quality loss (Korean kowiki) | Quality loss (English wikitext) | Measured gen tok/s (ngl=48, ctx 4096) | Target 40 verdict |
 |---|---|---|---|---|---|
-| Q8_0 | 2.29 GB | **−0.02 %** | +0.15 % | 34.26 | 미달 — 조기 종료 B |
-| Q6_K | 1.77 GB | +0.59 % | +0.46 % | 38.96 | 미달 — 조기 종료 B |
-| Q5_K_M | 1.54 GB | +0.53 % | +1.00 % | 38.76 | 미달 — 조기 종료 B |
-| **Q4_K_M** | **1.33 GB** | **+2.58 %** | **+3.78 %** | **44.62** | **통과(ngl=48)** |
+| Q8_0 | 2.29 GB | **−0.02 %** | +0.15 % | 34.26 | Below target — Early exit B |
+| Q6_K | 1.77 GB | +0.59 % | +0.46 % | 38.96 | Below target — Early exit B |
+| Q5_K_M | 1.54 GB | +0.53 % | +1.00 % | 38.76 | Below target — Early exit B |
+| **Q4_K_M** | **1.33 GB** | **+2.58 %** | **+3.78 %** | **44.62** | **Pass (ngl=48)** |
 
-
-The columns are candidate, file size, Korean kowiki quality loss, English wikitext
-quality loss, measured generation speed (ngl=48, ctx 4096), and target-40 verdict.
 
 BF16 baseline perplexity is **9.9511** for Korean and **8.7900** for English.
 Every quality figure in the table is a `--ppl-chunks 32` estimate with an error
@@ -411,26 +386,23 @@ been preserved from the same measurement as the tool. Calculation is determinist
 as the second point below explains, it is the same run. Matching values checks
 the wiring, not repeatability.
 
-| 한국어(kowiki) | PPL @128 chunks | 손실 @32 | 손실 @128 |
+| Korean (kowiki) | PPL @128 chunks | Loss @32 | Loss @128 |
 |---|---|---|---|
-| BF16 기준 | 10.6238 ± 0.16350 | — | — |
+| BF16 baseline | 10.6238 ± 0.16350 | — | — |
 | Q8_0 | 10.6187 ± 0.16335 | −0.02 % | −0.05 % |
 | **Q5_K_M** | **10.7413 ± 0.16504** | **+0.53 %** | **+1.11 %** |
 | **Q6_K** | **10.7470 ± 0.16569** | **+0.59 %** | **+1.16 %** |
 | Q4_K_M | 11.0577 ± 0.17044 | +2.58 % | +4.08 % |
 
 
-| 영어(wikitext-2) | PPL @128 chunks | 손실 @32 | 손실 @128 |
+| English (wikitext-2) | PPL @128 chunks | Loss @32 | Loss @128 |
 |---|---|---|---|
-| BF16 기준 | 9.9155 ± 0.14863 | — | — |
+| BF16 baseline | 9.9155 ± 0.14863 | — | — |
 | Q8_0 | 9.9217 ± 0.14873 | +0.15 % | +0.06 % |
 | **Q6_K** | **9.9778 ± 0.14975** | **+0.46 %** | **+0.63 %** |
 | **Q5_K_M** | **10.0197 ± 0.15035** | **+1.00 %** | **+1.05 %** |
 | Q4_K_M | 10.2945 ± 0.15471 | +3.78 % | +3.82 % |
 
-
-The tables show Korean kowiki and English wikitext-2 PPL at 128 chunks, followed
-by loss at 32 and 128 chunks. BF16 기준 means BF16 baseline.
 
 Five findings, ordered by how much they change the conclusion:
 
@@ -446,11 +418,10 @@ Five findings, ordered by how much they change the conclusion:
 
   | Korean, n = | 4 | 5–16 | 17–22 | 23–24 | 25–66 | 67 | 68–76 | 77–99 | 100–106 | 107–108 | 109–128 |
   |---|---|---|---|---|---|---|---|---|---|---|---|
-  | 앞선 quant | Q5_K_M | Q6_K | Q5_K_M | Q6_K | Q5_K_M | Q6_K | Q5_K_M | **Q6_K** | Q5_K_M | Q6_K | **Q5_K_M** |
+  | Leading quant | Q5_K_M | Q6_K | Q5_K_M | Q6_K | Q5_K_M | Q6_K | Q5_K_M | **Q6_K** | Q5_K_M | Q6_K | **Q5_K_M** |
 
 
-  The table's second row names the leading quantization. This is not a tiny gap
-  quietly settling down. At n=77-99, the *opposite* of the published order holds
+  This is not a tiny gap quietly settling down. At n=77-99, the *opposite* of the published order holds
   for 23 consecutive points. The Korean mean absolute margin there is
   **0.0545 percentage points**, slightly *larger* than **0.0537 percentage points**
   at n=128. The opposite order persists with equal or greater strength. At n=96,
@@ -468,7 +439,8 @@ Five findings, ordered by how much they change the conclusion:
 - **Neither margin exceeds the error bar, and their strengths are very different.**
   At 128 chunks, each perplexity error is ±0.15-0.17, or ±1.5 percentage points
   of loss. The English margin of 0.423 percentage points is about 1/4 of
-  that; the Korean n=128 margin of 0.054 percentage points is about 1/29. The English ranking gap is about 8 times stronger than the Korean
+  that; the Korean n=128 margin of 0.054 percentage points is about 1/29. The English
+  ranking gap is about 8 times stronger than the Korean
   one and, unlike Korean, has the same sign at every point.
 - **The available `+/-` is not exactly the error needed.** It is corpus-sampling
   error, describing how much absolute perplexity moves on another Korean sample.
@@ -553,11 +525,10 @@ Five findings, ordered by how much they change the conclusion:
   | ngl | 0 | 24 | 36 | 42 | 45 | 47 | 48 |
   |---|---|---|---|---|---|---|---|
   | gen tok/s | timeout | 10.86 | 17.56 | 23.53 ⚠ | 32.43 | **39.32** | **44.62** |
-  | llama-bench 표준편차 | — | ±0.05 | ±0.37 | **±4.94** ⚠ | ±0.26 | ±0.15 | ±1.25 |
+  | llama-bench standard deviation | — | ±0.05 | ±0.37 | **±4.94** ⚠ | ±0.26 | ±0.15 | ±1.25 |
 
 
-  The last row is llama-bench standard deviation. Moving **one** of the 48 layers
-  off the GPU costs 5.30 ± 1.26 tok/s, or 4.0-6.6, equivalent to throughput loss
+  Moving **one** of the 48 layers off the GPU costs 5.30 ± 1.26 tok/s, or 4.0-6.6, equivalent to throughput loss
   of 11.9% ± 2.8 percentage points. At 39.32, the result misses target 40 by 0.68.
   Relative to ngl=47's ±0.15, this gap is 4.5σ and clear. The curve is not linear
   in layer count either: half the layers, ngl=24, gives 10.86 tok/s, 24% of
@@ -603,19 +574,13 @@ Five findings, ordered by how much they change the conclusion:
 
 | | |
 |---|---|
-| 목표 선정 probe(cold: 기준 PPL + quantize 4회 + PPL 4회 + bench 4회) | **4분 59.81초** |
-| 목표 40 한국어 실행(cold `-ngl` 이진탐색, 새 bench 6회 — 7번째 curve 지점 ngl=48은 probe cache hit) | **12분 54.93초** |
-| ↳ 의도한 `ngl=0` bench timeout | 5분 00초 |
-| 목표 40 영어 실행(cold 품질 단계, 모든 bench cache hit) | **1분 53.19초** |
-| 한국어 `--resume` 재실행 | **1.47초** |
-| 영어 `--resume` 재실행 | **1.42초** |
+| Target-selection probe (cold: baseline PPL + quantize 4 times + PPL 4 times + bench 4 times) | **4 min 59.81 s** |
+| Target 40 Korean run (cold `-ngl` binary search, 6 new benchmarks — curve point 7 at ngl=48 is a probe cache hit) | **12 min 54.93 s** |
+| ↳ Intentional `ngl=0` benchmark timeout | 5 min 00 s |
+| Target 40 English run (cold quality stage, all benchmarks are cache hits) | **1 min 53.19 s** |
+| Korean `--resume` rerun | **1.47 s** |
+| English `--resume` rerun | **1.42 s** |
 
-
-The table records target-selection probe time, the Korean target-40 run,
-its intentional ngl=0 timeout, the English target-40 run, and both resume times,
-in that order. The
-Korean run performs new benchmarks while the English run reuses the benchmark
-cache. Time units in the original table are minutes (분) and seconds (초).
 
 Both `--resume` reruns reproduce the complete report byte for byte from
 `out/.fituna_cache.sqlite3`. The artifacts were preserved this time. Comparing

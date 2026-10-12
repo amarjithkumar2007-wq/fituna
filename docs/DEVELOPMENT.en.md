@@ -204,7 +204,7 @@ A validation run includes:
 4. Check the failure paths for a missing binary (exit code 2) and for reporting
    the best result when no feasible configuration exists (exit code 3).
 
-Run logs, timings, and hardware details are recorded in [RESULTS.md](RESULTS.md).
+Run logs, timings, and hardware details are recorded in [RESULTS.en.md](RESULTS.en.md).
 This includes variation between runs and thermal-throttling outliers retained
 rather than discarded, so readers can check the figures instead of taking them
 on trust. Actual platform validation currently covers macOS (Apple Silicon/Metal)

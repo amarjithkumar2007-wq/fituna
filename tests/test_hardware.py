@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """Hardware detection tests.
 
 Exercises fituna.hardware by monkeypatching subprocess.run so no real

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 import io
 import json
 from pathlib import Path

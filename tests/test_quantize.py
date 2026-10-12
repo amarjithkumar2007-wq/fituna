@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """Offline regression coverage for quantized-output publication and caching."""
 
 import subprocess

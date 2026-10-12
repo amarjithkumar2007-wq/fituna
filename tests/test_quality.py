@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """Unit tests for fituna.quality: perplexity and KL divergence evaluation."""
 
 import subprocess

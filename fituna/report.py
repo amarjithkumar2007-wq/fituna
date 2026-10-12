@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """fituna.report
 ================
 

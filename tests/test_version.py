@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """The package version lives in two places: pyproject.toml (what the build
 publishes) and fituna.__version__ (what the release workflow compares the
 tag against, and what users see). They must never drift apart."""

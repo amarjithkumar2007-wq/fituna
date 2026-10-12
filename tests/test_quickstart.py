@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """Tests for fituna.quickstart (the `fituna quickstart` interactive wizard).
 
 Nothing here touches a real TTY, the network, a subprocess, or the

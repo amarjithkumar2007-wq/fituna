@@ -49,20 +49,20 @@ FiTuna는 다섯 가지 결합 방식을 사용하며, 그중 하나만 이 저�
 | # | 부문 | 오픈소스SW | 라이선스(확인함) | 결합 방식 | 저장소 내 위치 |
 |---|---|---|---|---|---|
 | 1 | 추론·양자화 엔진 | llama.cpp (`llama-quantize`, `llama-bench`, `llama-perplexity`, `convert_hf_to_gguf.py`) | MIT | 서브프로세스(`llama-cli`/`llama-server`는 결과 명령에만 표시하고 실행하지 않음) | `quantize.py`, `bench.py`, `quality.py`, `model_info.py`, `binaries.py`, `report.py` |
-| 2 | 모델 파일 형식 | GGUF (ggml) | MIT(사양 저장소) | 파일 형식 | `model_info.py:201` `read_model_info()` |
+| 2 | 모델 파일 형식 | GGUF (ggml) | MIT(사양 저장소) | 파일 형식 | `model_info.py:202` `read_model_info()` |
 | 3 | 모델 가중치 | SmolLM2-135M-Instruct | Apache-2.0 | 파일 형식(사용자 제공) | `docs/RESULTS.md` 실행 1·4, `notebooks/` |
 | 4 | 모델 가중치 | Qwen3-4B-Instruct-2507 | Apache-2.0 | 파일 형식(사용자 제공) | `docs/RESULTS.md` 실행 2·3 |
 | 4b | 모델 가중치 | Midm-2.0-Mini-Instruct (KT Corporation) | MIT | 파일 형식(사용자 제공) | `docs/RESULTS.md` 실행 5 |
 | 5 | 평가 말뭉치(영어) | `Salesforce/wikitext`, `wikitext-2-raw-v1` | CC BY-SA 3.0 / GFDL | 내려받은 파일 | `corpus.py` `PRESETS["en"]` |
 | 6 | 평가 말뭉치(한국어) | `wikimedia/wikipedia`, `20231101.ko` | CC BY-SA 3.0 / GFDL | 내려받은 파일 | `corpus.py` `PRESETS["ko"]` |
-| 7 | 데이터 접근 API | HuggingFace dataset-viewer | Apache-2.0(서버 구현체) | 네트워크 프로토콜(HTTP GET) | `corpus.py:51` `API_BASE` |
+| 7 | 데이터 접근 API | HuggingFace dataset-viewer | Apache-2.0(서버 구현체) | 네트워크 프로토콜(HTTP GET) | `corpus.py:52` `API_BASE` |
 | 8 | 에이전트 프로토콜 | Model Context Protocol `2024-11-05`, JSON-RPC 2.0 기반 | Apache-2.0 / MIT(전환 중) | IPC 프로토콜(stdio) | `mcp_server.py` |
 | 9 | 언어 runtime | CPython 3.11+ 표준 라이브러리 | PSF License Agreement v2 | **import** | package 전체, `pyproject.toml` |
 | 10 | 빌드 backend | setuptools ≥ 77 | MIT | 빌드 시점만 | `pyproject.toml` `[build-system]` |
 | 11 | CI | `actions/checkout@v5`, `actions/setup-python@v6` | MIT | 개발·CI 전용 | `.github/workflows/ci.yml` |
 | 12 | test framework | pytest | MIT | 개발 전용(`[dev]` extra) | `tests/`, `pyproject.toml` |
 | 13 | 검증 환경 | Jupyter notebook 형식, git, CMake, pip, `huggingface_hub` | BSD-3-Clause, GPL-2.0, BSD-3-Clause, MIT, Apache-2.0 | 개발·notebook 전용 | `notebooks/colab_nvidia_verification.ipynb` |
-| 14 | GPU/RAM 감지 | `rocm-smi` (ROCm) | MIT | 서브프로세스(선택) | `hardware.py:111` |
+| 14 | GPU/RAM 감지 | `rocm-smi` (ROCm) | MIT | 서브프로세스(선택) | `hardware.py:112` |
 
 FiTuna가 호출하지만 재배포하지 않는 비오픈소스 구성요소인 `nvidia-smi`,
 `system_profiler`(§14), CUDA toolkit(§13), hosted GitHub Actions(§11), Google
@@ -83,17 +83,17 @@ FiTuna는 그 기능을 직접 구현하지 않습니다.
 
 | 바이너리 | 호출 위치 | 용도 |
 |---|---|---|
-| `llama-quantize` | `fituna/quantize.py:71` (`quantize()`) | F16/F32 기반 모델을 양자화 GGUF로 변환 |
-| `llama-bench` | `fituna/bench.py:114` (`run_bench()`) | `-o json`으로 prompt·생성 처리량 측정 |
-| `llama-perplexity` | `fituna/quality.py:56` (`compute_perplexity()`) | 품질 손실 gate용 perplexity 측정 |
-| `convert_hf_to_gguf.py` | `fituna/model_info.py:166` (`ensure_base_gguf()`) | HF 형식 디렉터리를 F16 기반 GGUF로 변환 |
+| `llama-quantize` | `fituna/quantize.py:72` (`quantize()`) | F16/F32 기반 모델을 양자화 GGUF로 변환 |
+| `llama-bench` | `fituna/bench.py:115` (`run_bench()`) | `-o json`으로 prompt·생성 처리량 측정 |
+| `llama-perplexity` | `fituna/quality.py:57` (`compute_perplexity()`) | 품질 손실 gate용 perplexity 측정 |
+| `convert_hf_to_gguf.py` | `fituna/model_info.py:167` (`ensure_base_gguf()`) | HF 형식 디렉터리를 F16 기반 GGUF로 변환 |
 
 세 파일은 *위치만 찾고 실행하지 않습니다.* `llama-cli`와 `llama-server`는 결과의
 `3) terminal chat`, `1) local API server` 줄에 실제 경로를 넣기 위해
-`fituna/report.py:32`의 `_find_beside_binaries()`가 `_find_llama_cli()`와
+`fituna/report.py:33`의 `_find_beside_binaries()`가 `_find_llama_cli()`와
 `_find_llama_server()`를 거쳐 찾습니다. `llama-cli`는 `fituna doctor`의 선택
-점검 항목(`doctor.py:312`)이기도 합니다. `llama-imatrix`는
-`fituna/binaries.py:99`에서 찾아 `fituna list-binaries`(`cli.py:267`)가
+점검 항목(`doctor.py:313`)이기도 합니다. `llama-imatrix`는
+`fituna/binaries.py:100`에서 찾아 `fituna list-binaries`(`cli.py:268`)가
 출력하지만 현재 실행하는 코드 경로는 없습니다. FiTuna가 `llama-imatrix`를
 "사용한다"고 하면 관계를 과장하게 되므로 이 구분이 중요합니다.
 
@@ -122,13 +122,13 @@ CPU를 지원하는 사실상의 portable local inference runtime입니다. 이�
 다음과 같은 의도한 결과가 있습니다.
 
 - FiTuna는 **quant 목록을 hardcode하지 않습니다.**
-  `list_supported_quant_types()`(`binaries.py:124`)가 실행 중
+  `list_supported_quant_types()`(`binaries.py:125`)가 실행 중
   `llama-quantize --help`를 해석하므로 quant 종류가 다른 빌드도 가정 없이
   처리합니다.
 - FiTuna는 **upstream 변경을 견딥니다.** llama.cpp 릴리스마다 문구가 달라져
-  `get_llama_cpp_version()`(`binaries.py:139`)은 banner 형식 세 가지를
-  시도합니다. `"pp512"` 같은 label 형식도 바뀌었으므로 `bench.py:43`은
-  `n_prompt`·`n_gen`으로 prompt와 생성 record를 구분합니다. `report.py:28`은
+  `get_llama_cpp_version()`(`binaries.py:140`)은 banner 형식 세 가지를
+  시도합니다. `"pp512"` 같은 label 형식도 바뀌었으므로 `bench.py:44`은
+  `n_prompt`·`n_gen`으로 prompt와 생성 record를 구분합니다. `report.py:29`은
   `llama-cli`뿐 아니라 예전 upstream 바이너리 이름인 `main`도 허용합니다.
 
 **검토한 대안.** Shell 호출 대신 ctypes 또는 compile extension으로 `libllama`에
@@ -142,14 +142,14 @@ subprocess 경계만으로 탐색에 필요한 모든 것을 얻을 수 있어 �
 **무엇인가.** llama.cpp가 사용하는 단일 파일 모델 container 형식이며 ggml
 저장소에 specification이 공개돼 있습니다.
 
-**사용 위치.** `fituna/model_info.py:201`의 `read_model_info()`가 파일을 열고
+**사용 위치.** `fituna/model_info.py:202`의 `read_model_info()`가 파일을 열고
 표준 라이브러리 `struct`로 GGUF header를 직접 해석합니다. Magic, version,
 tensor·KV 개수, metadata KV table(`general.architecture`,
 `<arch>.block_count`, `general.file_type`), tensor 정보 구간을 읽고 tensor element
 수를 합산해 실제 parameter 수를 구합니다. 여기서 얻은 `n_layers`는 `-ngl`
 이진탐색의 상한입니다. `general.file_type`은 사용자가 이미 양자화된 파일을
 "기준"으로 전달했을 때 경고하는 `is_already_quantized()`
-(`model_info.py:269`)에 사용됩니다.
+(`model_info.py:270`)에 사용됩니다.
 
 **라이선스와 확인 방법.** Specification 문서는
 `https://github.com/ggml-org/ggml/blob/master/docs/gguf.md` (HTTP 200 on
@@ -224,7 +224,7 @@ corpus입니다.
   기본 500행
 
 `fituna fetch-corpus`가 사용자의 `--out` 경로에 텍스트를 쓰면 이후
-`fituna/quality.py:56`이 그 경로를 `llama-perplexity -f`에 전달합니다.
+`fituna/quality.py:57`이 그 경로를 `llama-perplexity -f`에 전달합니다.
 
 **라이선스와 확인 방법.** 둘 다 **CC BY-SA 3.0이며 GFDL로도 이중
 라이선스**됩니다. 저작자 표시와 동일조건변경허락 의무가 적용됩니다. 2026-07-30에
@@ -232,13 +232,13 @@ corpus입니다.
 `https://huggingface.co/api/datasets/Salesforce/wikitext` and
 `https://huggingface.co/api/datasets/wikimedia/wikipedia` both return
 두 API 모두 `cardData.license: ["cc-by-sa-3.0", "gfdl"]`를 반환합니다.
-`corpus.py:55` 주석에도 같은 출처를 기록했고 각 preset의 `license_note`에 저작자
+`corpus.py:56` 주석에도 같은 출처를 기록했고 각 preset의 `license_note`에 저작자
 표시 문구가 있습니다.
 
 **결합 방식.** 필요할 때 받는 파일 형식입니다. Corpus 텍스트는 저장소에 commit하지
 않고 `.gitignore`가 `*.txt` 출력을 제외합니다. 사용자가 고른 경로로 다운로드하고
 FiTuna가 재배포하지 않으므로 FiTuna 자체에 CC BY-SA 동일조건 의무가 발생하지는
-않습니다. 다만 사용자는 재배포할 수 있으므로 `cli.py:320`의
+않습니다. 다만 사용자는 재배포할 수 있으므로 `cli.py:321`의
 `_cmd_fetch_corpus`는 **성공할 때마다 라이선스 고지와 출처 URL을 stdout에
 출력합니다.** `--dataset/--config/--split`으로 preset을 바꾸면 확인하지 않은
 다른 데이터셋에 CC BY-SA라고 잘못 주장하지 않도록 일반적인 "해당 데이터셋의
@@ -261,7 +261,7 @@ pyarrow·pandas를 끌어와 의존성 0개 보장과 충돌한다는 `corpus.py
 **무엇인가.** 인증 없이 데이터셋 행을 JSON으로 제공하는 HuggingFace 공개 REST
 service입니다.
 
-**사용 위치.** `fituna/corpus.py:51`의 `API_BASE =
+**사용 위치.** `fituna/corpus.py:52`의 `API_BASE =
 "https://datasets-server.huggingface.co/rows"`를 `_fetch_page()`가
 `urllib.request.urlopen`으로 호출합니다. `fetch_corpus()`는 `offset`·`length`로
 page를 넘기며 server는 `length`를 100으로 제한합니다. 쓰기 전 예상한 text
@@ -353,19 +353,19 @@ module은 다음과 같습니다. 모든 llama.cpp 호출에는 `subprocess`, GG
 stdin/stdout에 사용합니다. `search.py`의 경과 시간에는 `time`, `cache.py` 결과
 시간에는 `datetime`, `doctor.py` 출력 형식에는 `textwrap`을 사용합니다.
 
-`unittest.mock`은 정확히 한 self-check인 `bench.py:147`에서 세 가지 실패 상황을
+`unittest.mock`은 정확히 한 self-check인 `bench.py:148`에서 세 가지 실패 상황을
 검증하기 위해 `subprocess.run`을 바꿉니다. `subprocess`를 쓰는 다른 self-check는
-대신 해당 module 자체 이름을 직접 monkeypatch합니다. `search.py:434-436`의
+대신 해당 module 자체 이름을 직접 monkeypatch합니다. `search.py:435-437`의
 docstring도 그 이유를 "rather than pulling in unittest.mock/pytest"라고 적습니다.
 17개 self-check module 중 `__init__`, `errors`, `config`, `corpus`, `doctor`,
 `mcp_server` 여섯 개는 `subprocess`를 전혀 참조하지 않습니다.
 
 이 목록에서 실제로 Python 3.11 전용인 module은 `tomllib` 하나입니다.
-`fituna/__init__.py:11`의 version drift self-check가 `pyproject.toml`을 해석할 때
+`fituna/__init__.py:12`의 version drift self-check가 `pyproject.toml`을 해석할 때
 사용하며, 개발·CI 전용 명령 `python -m fituna.__init__`에서만 실행됩니다. 일반
 `import fituna`나 CLI 사용에는 실행되지 않습니다. 설치본에는 항상
 `pyproject.toml`이 없으므로 `_self_check()`도 비교를 마치기 전에 반환합니다
-(`fituna/__init__.py:15-16`). 설치한 package의 runtime 경로는 `tomllib`을
+(`fituna/__init__.py:16-17`). 설치한 package의 runtime 경로는 `tomllib`을
 import하지 않으므로 installer에 3.11 하한을 강제하는 직접 원인은 아닙니다.
 `requires-python`은 선언된 제약이며, 두 단락 뒤 설명처럼 CI에서 검증합니다.
 
@@ -373,9 +373,9 @@ import하지 않으므로 installer에 3.11 하한을 강제하는 직접 원인
 parse 시 처리되는 compiler directive인 `__future__`까지 세면 30개지만 runtime
 import는 아닙니다. **이 문서의 이전 판과 달리 `csv`는 포함되지 않습니다.**
 문자열 `"csv"`는 `nvidia-smi --format=csv,noheader,nounits` 인수
-(`hardware.py:79`)와 함수명 `_parse_nvidia_csv`에만 등장하며, `fituna/` 아래 어떤
+(`hardware.py:80`)와 함수명 `_parse_nvidia_csv`에만 등장하며, `fituna/` 아래 어떤
 module도 `csv` package를 import하지 않습니다. `bench.py`는 llama-bench의
-`-o json` 출력을, `quality.py`는 정규식 `_PPL_RE`(`quality.py:23`)로 일반 text를
+`-o json` 출력을, `quality.py`는 정규식 `_PPL_RE`(`quality.py:24`)로 일반 text를
 해석합니다. 둘 다 CSV를 해석하지 않습니다. AST로 확인한 전체 목록은
 `docs/SBOM.md` 2~27행이며, 1행은 interpreter 자체입니다.
 
@@ -398,7 +398,7 @@ dependency tree까지 더하면 설치 부담이 커집니다. 서브프로세�
 
 **검토한 대안.** hardware 감지용 `psutil` 대신 Windows에서는 약 20줄짜리
 `ctypes`의 `GlobalMemoryStatusEx` 호출, 다른 OS에서는 `/proc/meminfo` 또는
-`sysctl`을 사용했습니다(`hardware.py:176`). NUMA별 정밀도가 필요해지면 `psutil`로
+`sysctl`을 사용했습니다(`hardware.py:177`). NUMA별 정밀도가 필요해지면 `psutil`로
 전환한다는 주석도 코드에 있습니다. corpus 내려받기에는 `requests` 대신
 `urllib.request`를 사용했습니다.
 
@@ -506,12 +506,12 @@ llama.cpp CUDA backend를 빌드하는 CUDA toolkit은 Colab image가 제공하�
 
 | 도구 | 호출 위치 | 출처 | 라이선스 | 결합 방식 |
 |---|---|---|---|---|
-| `rocm-smi` | `hardware.py:111` | ROCm (`ROCm/rocm_smi_lib`, `python_smi_tools/rocm_smi.py`) | **MIT** | 서브프로세스, 선택 |
-| `nvidia-smi` | `hardware.py:78` | NVIDIA driver package | NVIDIA 독점 | 서브프로세스, 선택 |
-| `system_profiler` | `hardware.py:155` | macOS | Apple 독점 | 서브프로세스, 선택 |
-| `sysctl` | `hardware.py:187` | macOS/BSD base system(`apple-oss-distributions/system_cmds`) | **BSD-3-Clause** — 아래 근거 참조 | 서브프로세스, 선택 |
-| `/proc/meminfo` | `hardware.py:180` | Linux kernel interface | 해당 없음(kernel 제공 가상 파일) | 파일 읽기 |
-| `GlobalMemoryStatusEx` | `hardware.py:214` | Windows kernel32, `ctypes` 경유 | Microsoft 독점 | OS API 호출 |
+| `rocm-smi` | `hardware.py:112` | ROCm (`ROCm/rocm_smi_lib`, `python_smi_tools/rocm_smi.py`) | **MIT** | 서브프로세스, 선택 |
+| `nvidia-smi` | `hardware.py:79` | NVIDIA driver package | NVIDIA 독점 | 서브프로세스, 선택 |
+| `system_profiler` | `hardware.py:156` | macOS | Apple 독점 | 서브프로세스, 선택 |
+| `sysctl` | `hardware.py:188` | macOS/BSD base system(`apple-oss-distributions/system_cmds`) | **BSD-3-Clause** — 아래 근거 참조 | 서브프로세스, 선택 |
+| `/proc/meminfo` | `hardware.py:181` | Linux kernel interface | 해당 없음(kernel 제공 가상 파일) | 파일 읽기 |
+| `GlobalMemoryStatusEx` | `hardware.py:215` | Windows kernel32, `ctypes` 경유 | Microsoft 독점 | OS API 호출 |
 
 **`rocm-smi` 라이선스 확인.** 저장소의 현행 기본 branch에 있는
 `https://raw.githubusercontent.com/ROCm/rocm_smi_lib/amd-staging_deprecated/License.txt`는
@@ -546,7 +546,7 @@ vendor 방식으로 포함한 항목이 없고 PSF 라이선스의 표준 라이
 | 의무 | 출처 | 준수 방법 |
 |---|---|---|
 | MIT 고지 보존 | llama.cpp, ggml | `THIRD_PARTY_NOTICES.md` §1에 MIT 전문 수록 |
-| 저작자 표시 + 동일조건 | CC BY-SA 3.0 말뭉치 | `fituna fetch-corpus`가 매번 고지와 출처 URL 출력(`cli.py:320`), 말뭉치 text는 commit하지 않음 |
+| 저작자 표시 + 동일조건 | CC BY-SA 3.0 말뭉치 | `fituna fetch-corpus`가 매번 고지와 출처 URL 출력(`cli.py:321`), 말뭉치 text는 commit하지 않음 |
 | 모델 라이선스 준수 | 사용자가 선택한 weight | Weight를 재배포하지 않음. `docs/AI_MODEL_USAGE.md`에 공개 template 제공. 공개 결과의 모델은 Apache-2.0 또는 MIT |
 | FiTuna 자체 조건 | MIT (`LICENSE`) | 허용적 라이선스로 사용자에게 추가 의무를 부과하지 않음 |
 
@@ -606,17 +606,17 @@ FiTuna는 **런타임 의존성이 0개**이지만, 이는 "타 오픈소스SW�
 | 부문 | 활용 오픈소스SW | 라이선스(확인함) | 결합 방식 | 저장소 내 사용 위치 |
 |---|---|---|---|---|
 | 추론·양자화 엔진 | llama.cpp (`llama-quantize`/`llama-bench`/`llama-perplexity`/`convert_hf_to_gguf.py`) | MIT | **서브프로세스** (링크·포함 없음) | `quantize.py`, `bench.py`, `quality.py`, `model_info.py`, `binaries.py`, `report.py` |
-| 모델 파일 포맷 | GGUF (ggml 사양) | MIT | **파일 포맷 준수** (`struct`로 직접 파싱) | `model_info.py:201` |
+| 모델 파일 포맷 | GGUF (ggml 사양) | MIT | **파일 포맷 준수** (`struct`로 직접 파싱) | `model_info.py:202` |
 | 모델 가중치 | SmolLM2-135M-Instruct, Qwen3-4B-Instruct-2507, Midm-2.0-Mini-Instruct(KT) | 앞의 둘 Apache-2.0, Midm은 MIT | **사용자 제공 파일** (재배포 없음) | `docs/RESULTS.md`, `notebooks/` |
 | 평가 데이터셋 | `Salesforce/wikitext`(영), `wikimedia/wikipedia` `20231101.ko`(한) | CC BY-SA 3.0 / GFDL | **내려받아 파일로 사용** (저장소 미포함) | `corpus.py` `PRESETS` |
-| 데이터 조회 API | HuggingFace dataset-viewer | 서버 구현체 Apache-2.0 (FiTuna는 HTTP 호출만) | **네트워크 프로토콜** | `corpus.py:51` |
+| 데이터 조회 API | HuggingFace dataset-viewer | 서버 구현체 Apache-2.0 (FiTuna는 HTTP 호출만) | **네트워크 프로토콜** | `corpus.py:52` |
 | 에이전트 연동 프로토콜 | Model Context Protocol(`2024-11-05`) / JSON-RPC 2.0 | Apache-2.0·MIT 전환 중 | **프로토콜 자체 구현** (SDK 미사용) | `mcp_server.py` |
 | 언어·런타임 | CPython 3.11+ 표준 라이브러리 | PSF License Agreement v2 | **임포트** (유일한 링크 항목) | 패키지 전체, `pyproject.toml` |
 | 빌드 백엔드 | setuptools ≥ 77 | MIT | 빌드 시점 한정 | `pyproject.toml` |
 | CI | `actions/checkout@v5`, `actions/setup-python@v6` | 둘 다 MIT | 개발·CI 한정 | `.github/workflows/ci.yml` |
 | 테스트 | pytest | MIT | 개발 한정(`[dev]` 옵션) | `tests/`, `pyproject.toml` |
 | 검증 환경 | Jupyter 노트북 포맷, git, CMake, pip, `huggingface_hub` | BSD-3-Clause, GPL-2.0, BSD-3-Clause, MIT, Apache-2.0 | 노트북 한정 | `notebooks/colab_nvidia_verification.ipynb` |
-| GPU 감지 | `rocm-smi` (ROCm) | MIT (현행 기본 브랜치 `License.txt`) | 서브프로세스(선택) | `hardware.py:111` |
+| GPU 감지 | `rocm-smi` (ROCm) | MIT (현행 기본 브랜치 `License.txt`) | 서브프로세스(선택) | `hardware.py:112` |
 
 **라이선스 확인 방법.** 위 라이선스는 모두 2026-07-30에 1차 출처에서 직접
 확인했다 — 각 프로젝트의 `LICENSE`/`License.txt` 원문, 또는 모델·데이터셋의

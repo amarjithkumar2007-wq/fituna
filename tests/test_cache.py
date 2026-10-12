@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """sqlite3 ResultCache read/write + resume-scenario tests.
 
 fituna.cache.ResultCache is fully implemented; these tests exercise the

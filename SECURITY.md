@@ -34,7 +34,7 @@ subprocess로 실행하고 그 출력을 해석합니다. 바이너리 경로는
 
 가장 큰 노출 지점은 `--llama-bin-dir` 옵션 자체보다 이 옵션이 가리킬 수 있는
 위치입니다. HF 형식 모델 디렉터리를 변환할 때
-(`fituna/model_info.py:166-177`) `[sys.executable,
+(`fituna/model_info.py:167-178`) `[sys.executable,
 convert_hf_to_gguf.py, ...]`을 실행합니다. 즉 FiTuna와 같은 인터프리터가 임의의
 Python 스크립트를 실행합니다. `fituna/binaries.py`의 `_find_script`는 이
 스크립트를 `bin_dir`(사용자가 지정한 `--llama-bin-dir`)뿐 아니라 두 단계 위인

@@ -278,7 +278,7 @@ byte가 저장소에 없어도 MIT 전문을 수록했습니다.
 2. **FiTuna가 배포하지 않습니다.** `fituna fetch-corpus`는 *사용자가 선택한*
    `--out` 경로에 내려받습니다. byte는 HuggingFace에서 사용자에게 이동하며 FiTuna는
    전송 수단이지 재배포자가 아닙니다.
-3. **내려받을 때 고지합니다.** `fituna/cli.py:320`의 `_cmd_fetch_corpus`는 성공할
+3. **내려받을 때 고지합니다.** `fituna/cli.py:321`의 `_cmd_fetch_corpus`는 성공할
    때마다 source URL과 license 고지를 stdout에 출력합니다. text를 재배포하려는
    사용자도 조건을 확인할 수 있습니다. `--dataset/--config/--split`으로 preset을
    바꾸면 같은 코드 경로가 "check this dataset's own license"라는 일반 안내를
@@ -578,7 +578,10 @@ Unfortunately, your project is not compliant with version 3.3 of the REUSE Speci
   다른 주체의 고지를 *인용한* 문서 네 개(`README.md`, `docs/ARCHITECTURE.md`,
   `docs/OPEN_SOURCE_USAGE.md`, `docs/RESULTS.md`)입니다. FiTuna `.py`에는
   `SPDX-License-Identifier`가 있지만 `SPDX-FileCopyrightText`는 의도적으로 없습니다.
-  위 `Missing licenses` 설명과 §6을 참조하십시오.
+  위 `Missing licenses` 설명과 §6을 참조하십시오. (2026-10-12 갱신: 이후 모든 `.py`
+  파일의 둘째 줄에 root `LICENSE`와 같은 `# Copyright (c) 2026 FiTuna contributors`
+  고지를 추가했습니다. 위 출력은 2026-07-30 실행 기록이므로 그대로 둡니다. 자세한
+  내용은 §4 끝을 참조하십시오.)
 - **`Files with license information: 27 / 54`.** tag가 있는 `.py` 파일 27개(§4)를
   모두 셉니다. 여기에는 `reuse`가 파일 자체 header를 읽지 못하는
   `fituna/config.py`도 포함되므로 설명이 필요합니다. `reuse`는 파일의 처음 2048
@@ -674,6 +677,19 @@ license*로 분류해 미해결 항목으로 보고합니다. 이제 source 파�
 프로젝트 SCA scan(§3.5)에 "no copyright and licensing information"으로 남는
 항목이 없습니다.
 
+**저작권 고지 추가(2026-10-12).** 파일 단위로 저작권자도 드러나도록 모든 `.py`
+파일의 둘째 줄에 root `LICENSE`와 같은 문구의 고지를 추가했습니다. 첫 줄의 SPDX tag는
+그대로입니다. `tests/test_license_headers.py`가 `fituna/`와 `tests/`의 모든 `.py`
+파일에서 두 줄을 검사하므로 새 파일이 header 없이 들어오면 CI가 실패합니다. 이때 SPDX
+tag가 없던 `tests/test_mcp_server.py`(위 27개 확인 이후 추가된 파일)에도 두 줄을
+넣었습니다. `REUSE.toml`의 `fituna/config.py` annotation도 같은 저작권자로 바꿨습니다.
+줄이 하나씩 밀리므로 문서의 `file.py:NNN` 인용도 모두 1씩 옮겼습니다.
+
+```
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
+```
+
 **Regression 검사.** 모든 파일에 한 줄을 추가하면 아래 line number가 전부
 바뀝니다. 두 영향을 모두 확인하고 처리했습니다.
 
@@ -757,7 +773,7 @@ for m in corpus doctor quickstart cli mcp_server; do /tmp/runtimeenv/bin/python 
 |---|---|
 | Code similarity / 라이선스 원문 matching(ScanCode, FOSSology) | **실행하지 않음** — 추적 파일 57개에 비해 비용이 큼. 대체 검사와 남는 사각지대는 §3.1 참조 |
 | `reuse`가 `fituna/config.py` 자체 header를 읽지 못함 | **도구 한계를 진단하고 우회함**(§3.5). `reuse`의 2 KB encoding heuristic이 multi-byte 문자를 중간에서 잘라 파일 안 tag를 읽지 못함. 파일 byte 배치를 바꾸는 방식은 주석 길이와 2048번째 byte 위치에 의존해 취약하므로 쓰지 않고, byte 위치와 무관하며 REUSE가 공식 지원하는 `REUSE.toml` 파일 단위 annotation으로 해결 |
-| REUSE 3.3 완전 준수(`LICENSES/` 디렉터리, 파일별 copyright tag) | **채택하지 않음** — 이번 검증 범위보다 엄격한 표준. root `LICENSE`와 파일별 SPDX tag를 사용하는 일반적인 방식을 유지 |
+| REUSE 3.3 완전 준수(`LICENSES/` 디렉터리, 파일별 copyright tag) | **일부 채택** — `.py` 파일에는 2026-10-12부터 SPDX tag와 copyright 고지가 모두 있음(§4). `LICENSES/` 디렉터리와 문서·이미지 파일의 tag는 채택하지 않고 root `LICENSE`를 유지 |
 | `pyproject.toml` 라이선스 선언 | **변경함** — `license = { text = "MIT" }`를 PEP 639 SPDX expression `license = "MIT"`로 바꾸고 이를 지원하는 `setuptools>=77`로 build backend 최저 버전을 68에서 올림. Expression과 OSI classifier를 함께 두면 `setuptools>=77`이 `InvalidConfigError`를 내므로 `License :: OSI Approved :: MIT License` classifier는 제거. Wheel metadata는 기존 `License: MIT` 대신 Metadata-Version 2.4의 `License-Expression: MIT`를 포함하며 `pip-licenses`가 이를 읽음(§3.2). `importlib.metadata`의 `License` key나 OSI classifier 문자열만 보는 도구는 FiTuna를 찾지 못하므로 `License-Expression` 또는 SPDX 식별자를 읽어야 함 |
 | HuggingFace dataset-viewer **service** 이용약관 | **미확인** — `docs/OPEN_SOURCE_USAGE.md` §7에 명시. Server 구현의 Apache-2.0은 확인했지만 hosted service 약관은 검토하지 않음 |
 | `docs/RESULTS.md` Run 4의 llama.cpp 빌드 버전 | **주장하지 않음** — Colab notebook이 tag를 고정하지 않고 clone하므로 버전을 특정하지 않음(`docs/OPEN_SOURCE_USAGE.md` §13) |

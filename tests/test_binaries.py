@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """Tests for the llama.cpp binary discovery and output parsers."""
 
 from pathlib import Path

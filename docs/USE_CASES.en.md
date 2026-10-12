@@ -2,7 +2,7 @@
 
 # FiTuna Use Cases
 
-Scenarios with measured figures use actual measurements (`docs/RESULTS.md`). The
+Scenarios with measured figures use actual measurements (`docs/RESULTS.en.md`). The
 others explain how the tool works. No figures are invented: avoiding guesses is
 why this tool exists.
 
@@ -149,10 +149,10 @@ standard library), the `fituna-mcp` console script, and CI self-checks
 - The quality metric is a single axis: perplexity. It is a general-purpose proxy,
   not a guarantee of domain-specific quality. The measured text is not fixed,
   though: `--quality-corpus` accepts any UTF-8 text file, and Runs 3 and 5 in
-  `docs/RESULTS.md` used a Korean corpus. The recommended approach is to measure
+  `docs/RESULTS.en.md` used a Korean corpus. The recommended approach is to measure
   text resembling the actual workload.
 - Search creates all candidate quantized files (about 12GB of disk space for
   4 candidates of a 4B model). These files are reused on subsequent runs.
 - Benchmark figures are sensitive to thermal conditions. If a result only narrowly
   meets or misses the target by a few tok/s, rerun with the machine in its normal
-  state. See the measured variability in `docs/RESULTS.md`.
+  state. See the measured variability in `docs/RESULTS.en.md`.

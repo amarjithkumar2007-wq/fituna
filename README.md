@@ -141,7 +141,7 @@ Three models of different sizes, each given a target. In all three runs the
 | Midm-2.0-Mini (Korean) | 40 tok/s, ≤5% loss | Q8_0: 34.26 tok/s ❌ | **Q4_K_M @ ngl=48 → 44.62 tok/s, 2.58%** ✅ |
 
 Apple M3 Pro, llama.cpp build 9960. Full logs and run-to-run variance:
-[docs/RESULTS.md](docs/RESULTS.md) · Scenarios:
+[docs/RESULTS.en.md](docs/RESULTS.en.md) · Scenarios:
 [docs/USE_CASES.en.md](docs/USE_CASES.en.md) · Reproduce on NVIDIA/Linux (free T4):
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/leeyunseokarchive/fituna/blob/main/notebooks/colab_nvidia_verification.ipynb)
 

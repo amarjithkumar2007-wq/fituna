@@ -1,3 +1,5 @@
+[English version](./RESULTS.en.md)
+
 # End-to-end 실측 결과
 
 실제 하드웨어에서 실제 llama.cpp 바이너리와 open-weight 모델로 `fituna run`을

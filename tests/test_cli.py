@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """CLI-level seam tests for ``fituna run``.
 
 Unlike tests/test_report.py (which calls report.py functions directly), these

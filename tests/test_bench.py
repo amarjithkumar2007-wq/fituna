@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """Pytest coverage for llama-bench JSON parsing and command construction."""
 
 from __future__ import annotations

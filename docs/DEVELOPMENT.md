@@ -209,7 +209,7 @@ Silicon/Metal)와 Linux(NVIDIA Tesla T4/CUDA)입니다. Linux 결과는
 구현했고 corpus 다운로드도 `datasets`가 아닌 `urllib`를 사용합니다. CI의
 `pip install -e .` 단계가 매번 의존성 선언을 검사합니다.
 
-라이선스는 추정하지 않고 추적합니다. 모든 Python 파일의 SPDX header,
+라이선스는 추정하지 않고 추적합니다. 모든 Python 파일의 SPDX·저작권 header,
 `REUSE.toml`, FiTuna가 호출하는 도구와 실측에 사용한 corpus·모델을 다루는 준수
 기록을 마련했습니다. 다음 문서를 참고하세요.
 

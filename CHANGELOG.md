@@ -45,6 +45,10 @@
 - **번역 문서의 언어 링크 문구 통일, 개발 문서의 Python 3.13 설명 정정** — 번역 문서 맨 위
   링크를 아키텍처 문서와 같은 `English version` / `한국어 원문`으로 맞췄습니다. "3.13은 현재
   릴리스"라는 문장은 CI가 검증하는 최신 버전이자 PyPI 릴리스 빌드 버전이라는 뜻으로 고쳤습니다.
+- **모든 Python 파일에 저작권 고지 추가** — 첫 줄 SPDX tag 아래에 root `LICENSE`와 같은
+  `# Copyright (c) 2026 FiTuna contributors` 줄을 넣었습니다. 빠져 있던
+  `tests/test_mcp_server.py`의 SPDX tag도 추가했고, `tests/test_license_headers.py`가 두 줄을
+  검사합니다. 줄이 하나씩 밀려 문서의 `file.py:NNN` 인용도 1씩 옮겼습니다.
 - **README 로드맵 항목에 추적 이슈 링크 추가**([#72](https://github.com/leeyunseokarchive/fituna/pull/72), @kittu181707, #70).
 
 ## [0.3.6] — 2026-10-07

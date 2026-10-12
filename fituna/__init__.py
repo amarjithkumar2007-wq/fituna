@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """FiTuna: hardware-aware auto-tuner for llama.cpp GGUF quantization + runtime configs."""
 
 __version__ = "0.3.6"

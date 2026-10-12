@@ -1,7 +1,8 @@
 version = 1
 
 # fituna/config.py carries the same "# SPDX-License-Identifier: MIT" line-1
-# tag as every other fituna/*.py file (see docs/LICENSE_COMPLIANCE.md §3.5),
+# tag and "# Copyright (c) 2026 FiTuna contributors" line-2 notice as every
+# other fituna/*.py file (see docs/LICENSE_COMPLIANCE.md §3.5),
 # but reuse's encoding heuristic only inspects the first 2048 bytes of a
 # file, and in this file byte 2048 lands mid-character in a multi-byte UTF-8
 # Korean comment. charset-normalizer fails to decode the truncated chunk,
@@ -10,5 +11,5 @@ version = 1
 # it does not depend on byte position, unlike any fix to the file itself.
 [[annotations]]
 path = "fituna/config.py"
-SPDX-FileCopyrightText = "NONE"
+SPDX-FileCopyrightText = "2026 FiTuna contributors"
 SPDX-License-Identifier = "MIT"

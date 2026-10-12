@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """Artifact-centric result exits: server command, Ollama export, JSON fields,
 and the human rendering order.
 

@@ -224,8 +224,8 @@ JSON-RPC directly instead of using an SDK, and corpus downloads use `urllib`
 rather than `datasets`. The `pip install -e .` step in CI checks dependency
 declarations every time.
 
-Licenses are tracked, not guessed. The project includes an SPDX header in every
-Python file, `REUSE.toml`, and compliance records covering the tools FiTuna calls
+Licenses are tracked, not guessed. The project includes an SPDX and copyright header in
+every Python file, `REUSE.toml`, and compliance records covering the tools FiTuna calls
 and the corpora and models used for measurements. See:
 
 [LICENSE_COMPLIANCE.md](LICENSE_COMPLIANCE.md),

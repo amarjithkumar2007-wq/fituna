@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 FiTuna contributors
 """Tests for fituna.doctor (the `fituna doctor` subcommand).
 
 Every underlying dependency (subprocess-backed hardware/binaries detection,

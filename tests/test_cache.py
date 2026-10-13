@@ -475,3 +475,60 @@ def test_v2_migration_failure_does_not_advise_deleting_the_cache(tmp_path, monke
     assert "unchanged" in msg
     assert "delete it" not in msg
     assert str(db) in msg
+
+
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt, SystemExit])
+@pytest.mark.parametrize("step", ["INSERT INTO quality_cache", "DROP TABLE quality_cache_pre_metric"])
+def test_v2_migration_interruption_rolls_back_and_can_retry(tmp_path, monkeypatch, interrupt, step):
+    """An interruption during copy or cleanup must leave the old cache usable."""
+    db = tmp_path / "v2.sqlite3"
+    _write_v2_quality_cache(db)
+    with sqlite3.connect(str(db)) as conn:
+        original_rows = conn.execute("SELECT * FROM quality_cache ORDER BY quant").fetchall()
+        original_schema = conn.execute("PRAGMA table_info(quality_cache)").fetchall()
+
+    real_connect = sqlite3.connect
+    connections = []
+    failure = interrupt("interrupted migration")
+
+    class InterruptedConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql.startswith(step):
+                raise failure
+            return super().execute(sql, *args, **kwargs)
+
+    def interrupted_connect(*args, **kwargs):
+        conn = real_connect(*args, factory=InterruptedConnection, **kwargs)
+        connections.append(conn)
+        return conn
+
+    with monkeypatch.context() as patch:
+        patch.setattr("fituna.cache.sqlite3.connect", interrupted_connect)
+        try:
+            with pytest.raises(interrupt) as excinfo:
+                ResultCache(db)
+            assert excinfo.value is failure
+            # Check through a fresh connection while the interrupted one is
+            # still open: rollback must release its transaction, not rely on
+            # connection cleanup to restore the original table.
+            with real_connect(str(db), timeout=0.1) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                assert conn.execute("PRAGMA table_info(quality_cache)").fetchall() == original_schema
+                assert conn.execute("SELECT * FROM quality_cache ORDER BY quant").fetchall() == original_rows
+                assert conn.execute(
+                    "SELECT name FROM sqlite_master WHERE name='quality_cache_pre_metric'"
+                ).fetchone() is None
+        finally:
+            for conn in connections:
+                conn.close()
+
+    cache = ResultCache(db)
+    try:
+        assert cache.get_quality("m", "Q4_K_M", ppl_chunks=32, corpus_fp="c") == QualityResult(
+            candidate_quant="Q4_K_M", perplexity=6.15, baseline_perplexity=6.0,
+            quality_loss_pct=2.5, metric="ppl", kld=None,
+        )
+        assert cache.get_quality("m", "__baseline__", ppl_chunks=32, corpus_fp="c").perplexity == 6.0
+        assert cache.get_quality("m", "Q8_0", ppl_chunks=None, corpus_fp="c").perplexity == 6.01
+    finally:
+        cache.close()

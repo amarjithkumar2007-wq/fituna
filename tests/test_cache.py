@@ -8,6 +8,7 @@ needed -- the whole point of this cache is to be a thin, honest sqlite3
 wrapper).
 """
 
+import contextlib
 import re
 import sqlite3
 from pathlib import Path
@@ -483,7 +484,7 @@ def test_v2_migration_interruption_rolls_back_and_can_retry(tmp_path, monkeypatc
     """An interruption during copy or cleanup must leave the old cache usable."""
     db = tmp_path / "v2.sqlite3"
     _write_v2_quality_cache(db)
-    with sqlite3.connect(str(db)) as conn:
+    with contextlib.closing(sqlite3.connect(str(db))) as conn:
         original_rows = conn.execute("SELECT * FROM quality_cache ORDER BY quant").fetchall()
         original_schema = conn.execute("PRAGMA table_info(quality_cache)").fetchall()
 
@@ -511,7 +512,7 @@ def test_v2_migration_interruption_rolls_back_and_can_retry(tmp_path, monkeypatc
             # Check through a fresh connection while the interrupted one is
             # still open: rollback must release its transaction, not rely on
             # connection cleanup to restore the original table.
-            with real_connect(str(db), timeout=0.1) as conn:
+            with contextlib.closing(real_connect(str(db), timeout=0.1)) as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 assert conn.execute("PRAGMA table_info(quality_cache)").fetchall() == original_schema
                 assert conn.execute("SELECT * FROM quality_cache ORDER BY quant").fetchall() == original_rows

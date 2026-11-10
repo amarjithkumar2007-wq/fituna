@@ -12,6 +12,7 @@ tmp_path; no network and no llama.cpp binaries are involved.
 
 from __future__ import annotations
 
+import os
 import struct
 from pathlib import Path
 
@@ -217,4 +218,7 @@ def test_model_fingerprint_is_deterministic_and_name_sensitive(tmp_path):
     first = write_gguf(tmp_path, data, "first.gguf")
     assert model_fingerprint(first) == model_fingerprint(first)
     other = write_gguf(tmp_path, data, "other.gguf")
+    # Pin other's mtime to first's so only the file name differs.
+    st = first.stat()
+    os.utime(other, ns=(st.st_atime_ns, st.st_mtime_ns))
     assert model_fingerprint(other) != model_fingerprint(first)

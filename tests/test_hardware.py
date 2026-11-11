@@ -9,12 +9,16 @@ nvidia-smi/rocm-smi/system_profiler binary (or GPU) is required. Covers:
 - detect_hardware()'s vendor-priority fallthrough (nvidia -> amd -> apple ->
   cpu-only) driven entirely through a faked subprocess.run,
 - parse_manual_hardware()'s override-merge semantics against a faked
-  detect_hardware() baseline.
+  detect_hardware() baseline,
+- every OS branch and fallback of _detect_ram_mb() (Linux /proc/meminfo,
+  macOS sysctl, Windows ctypes, unknown OS) with all inputs pinned.
 """
 
 from __future__ import annotations
 
+import io
 import subprocess
+import sys
 
 import pytest
 
@@ -369,3 +373,92 @@ if __name__ == "__main__":
     import sys
 
     raise SystemExit(pytest.main([__file__, "-v", *sys.argv[1:]]))
+
+
+# ---------------------------------------------------------------------------
+# _detect_ram_mb(): per-OS branches and fallbacks (#95)
+# ---------------------------------------------------------------------------
+
+
+_MEMINFO_16GB = "MemTotal:       16384000 kB\nMemFree:         100000 kB\n"
+
+
+def _fake_open_for_meminfo(text: str = "", error: OSError | None = None):
+    """``builtins.open`` replacement that serves ``text`` for /proc/meminfo
+    (or raises ``error``) and delegates every other path to the real open."""
+    real_open = open
+
+    def _fake(file, *args, **kwargs):
+        if file == "/proc/meminfo":
+            if error is not None:
+                raise error
+            return io.StringIO(text)
+        return real_open(file, *args, **kwargs)
+
+    return _fake
+
+
+def test_detect_ram_mb_linux_reads_meminfo(monkeypatch):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Linux")
+    monkeypatch.setattr("builtins.open", _fake_open_for_meminfo(_MEMINFO_16GB))
+
+    assert hardware._detect_ram_mb() == 16384000 // 1024
+
+
+def test_detect_ram_mb_linux_meminfo_unreadable_returns_zero(monkeypatch):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(
+        "builtins.open", _fake_open_for_meminfo(error=OSError("denied"))
+    )
+
+    assert hardware._detect_ram_mb() == 0
+
+
+def test_detect_ram_mb_linux_meminfo_without_memtotal_returns_zero(monkeypatch):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(
+        "builtins.open", _fake_open_for_meminfo("MemFree:         100000 kB\n")
+    )
+
+    assert hardware._detect_ram_mb() == 0
+
+
+def test_detect_ram_mb_macos_sysctl_bytes_converted_to_mb(monkeypatch):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(hardware, "_run", lambda cmd, **kwargs: "17179869184\n")
+
+    assert hardware._detect_ram_mb() == 16384
+
+
+@pytest.mark.parametrize("bad_output", [None, "not-a-number\n"])
+def test_detect_ram_mb_macos_sysctl_failure_returns_zero(monkeypatch, bad_output):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(hardware, "_run", lambda cmd, **kwargs: bad_output)
+
+    assert hardware._detect_ram_mb() == 0
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="off-Windows check: ctypes.windll must not exist for this test",
+)
+def test_detect_ram_mb_windows_branch_off_windows_returns_zero(monkeypatch):
+    # On Linux/macOS, ctypes.windll does not exist; the Windows branch must
+    # fail safe and return 0 instead of raising AttributeError.
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Windows")
+
+    assert hardware._detect_ram_mb() == 0
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="needs the real GlobalMemoryStatusEx call; runs on CI windows-latest",
+)
+def test_detect_ram_mb_windows_branch_on_windows_returns_positive():
+    assert hardware._detect_ram_mb() > 0
+
+
+def test_detect_ram_mb_unknown_os_returns_zero(monkeypatch):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "FreeBSD")
+
+    assert hardware._detect_ram_mb() == 0

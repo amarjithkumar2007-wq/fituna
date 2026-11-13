@@ -425,7 +425,15 @@ def test_detect_ram_mb_linux_meminfo_without_memtotal_returns_zero(monkeypatch):
 
 def test_detect_ram_mb_macos_sysctl_bytes_converted_to_mb(monkeypatch):
     monkeypatch.setattr(hardware.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(hardware, "_run", lambda cmd, **kwargs: "17179869184\n")
+    # Answer only the exact sysctl query, so a wrong key (e.g. hw.physmem)
+    # makes _run return None and the test fail.
+    monkeypatch.setattr(
+        hardware,
+        "_run",
+        lambda cmd, **kwargs: "17179869184\n"
+        if cmd == ["sysctl", "-n", "hw.memsize"]
+        else None,
+    )
 
     assert hardware._detect_ram_mb() == 16384
 

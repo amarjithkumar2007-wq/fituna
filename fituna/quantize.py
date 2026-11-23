@@ -27,6 +27,10 @@ def _model_stem(base_gguf: Path) -> str:
     stem = base_gguf.stem
     return _BASE_SUFFIX_RE.sub("", stem) or stem
 
+def quantized_path(base_gguf: Path, quant: str, out_dir: Path, model_fp: str) -> Path:
+    """후보 GGUF 파일을 생성하지 않고 출력 경로만 계산한다."""
+    return out_dir / f"{_model_stem(base_gguf)}-{model_fp[:12]}-{quant}.gguf"
+
 
 def quantize(base_gguf: Path, quant: str, out_dir: Path, binaries: BinaryPaths, model_fp: str) -> Path:
     """Run `llama-quantize <base_gguf> <out_dir>/<model>-<fp8>-<quant>.gguf <quant>`.
@@ -46,7 +50,7 @@ def quantize(base_gguf: Path, quant: str, out_dir: Path, binaries: BinaryPaths, 
     fingerprint makes that collision impossible by construction.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{_model_stem(base_gguf)}-{model_fp[:12]}-{quant}.gguf"
+    out_path = quantized_path(base_gguf, quant, out_dir, model_fp)
 
     # Idempotent: a previous run already produced this exact quant.
     if out_path.exists() and out_path.stat().st_size > 0:

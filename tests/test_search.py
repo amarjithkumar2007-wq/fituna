@@ -849,3 +849,304 @@ def test_default_mode_keeps_all_candidates(monkeypatch, tmp_path):
     assert quantize_calls == ["Q8_0", "Q4_K_M"], "no stage-2 re-quantize in default mode"
     assert (tmp_path / "model-Q8_0.gguf").exists()
     assert (tmp_path / "model-Q4_K_M.gguf").exists(), "default mode must not delete candidates"
+
+
+def test_low_disk_keeps_one_candidate(monkeypatch, tmp_path):
+    """후보를 하나씩 처리하고, 품질이 가장 좋은 결과 파일만 남기는지 검사한다."""
+    from fituna.quantize import quantized_path
+
+    # 테스트용 원본 모델과 출력 폴더를 만든다.
+    model = _model_info(tmp_path)
+    model.base_gguf_path.write_bytes(b"base")
+
+    out = tmp_path / "out"
+    out.mkdir()
+    created = []
+
+    # 입력 순서와 실제 품질 순서를 일부러 다르게 설정한다.
+    # 품질 손실이 작은 Q6_K가 먼저 선택되어야 한다.
+    losses = {"Q8_0": 2.0, "Q6_K": 1.0}
+
+    target = TargetSpec(
+        model_path=model.base_gguf_path,
+        target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0,
+        quant_candidates=("Q8_0", "Q6_K"),
+        low_disk=True,
+    )
+
+    def fake_quantize(base, quant, out_dir, binaries, model_fp):
+        path = quantized_path(base, quant, out_dir, model_fp)
+
+        # 실제 양자화 대신 작은 파일을 생성한다.
+        # 이미 존재하는 파일은 재사용한다.
+        if not path.exists():
+            path.write_bytes(b"candidate")
+            created.append(quant)
+
+        # 후보를 만들거나 재사용할 때마다 파일 수를 확인한다.
+        assert len(list(out_dir.glob("*.gguf"))) == 1
+        return path
+
+    def fake_quality(quant, path, baseline, *args, **kwargs):
+        assert path.exists()
+
+        return QualityResult(
+            candidate_quant=quant,
+            perplexity=baseline * (1 + losses[quant] / 100),
+            baseline_perplexity=baseline,
+            quality_loss_pct=losses[quant],
+        )
+
+    def fake_bench(path, ngl, ctx, target, binaries):
+        assert path.exists()
+        quant = path.stem.rsplit("-", 1)[1]
+
+        # 실제 품질이 더 좋은 Q6_K부터 속도를 측정해야 한다.
+        assert quant == "Q6_K"
+
+        return BenchResult(
+            candidate=CandidateConfig(quant=quant, ngl=ngl, ctx=ctx),
+            prompt_tok_per_sec=50.0,
+            gen_tok_per_sec=25.0,
+            vram_used_mb=None,
+            raw_stdout="{}",
+        )
+
+    # 무거운 모델 계산을 테스트용 함수로 대체한다.
+    _patch(monkeypatch, "quantize", "quantize", fake_quantize)
+    _patch(monkeypatch, "quality", "compute_perplexity", lambda *args: 6.0)
+    _patch(monkeypatch, "quality", "evaluate_quality", fake_quality)
+    _patch(monkeypatch, "bench", "run_bench", fake_bench)
+    _patch(
+        monkeypatch, "binaries", "get_llama_cpp_version",
+        lambda binaries: "test-build",
+    )
+    _patch(
+        monkeypatch, "binaries", "list_supported_quant_types",
+        lambda binaries: ["Q8_0", "Q6_K"],
+    )
+
+    result = search(
+        target=target,
+        model_info=model,
+        hw=_hw(GPUVendor.NONE),
+        binaries=_binaries(tmp_path),
+        work_dir=out,
+        wikitext_path=tmp_path / "wiki.txt",
+        cache=None,
+    )
+
+    # 품질 측정용 파일 두 개와 속도 측정용 재생성 한 번.
+    assert created == ["Q8_0", "Q6_K", "Q6_K"]
+
+    # 선택 결과와 최종 파일, 원본 보존을 확인한다.
+    assert result.config.quant == "Q6_K"
+    assert result.meets_target is True
+    assert result.gguf_path.exists()
+    assert list(out.glob("*.gguf")) == [result.gguf_path]
+    assert model.base_gguf_path.read_bytes() == b"base"
+
+def test_low_disk_restores_best_effort(monkeypatch, tmp_path):
+    """모든 후보가 목표에 미달하면 가장 빨랐던 후보 파일을 복원한다."""
+    from fituna.quantize import quantized_path
+
+    model = _model_info(tmp_path)
+    model.base_gguf_path.write_bytes(b"base")
+
+    out = tmp_path / "out"
+    out.mkdir()
+    created = []
+
+    target = TargetSpec(
+        model_path=model.base_gguf_path,
+        target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0,
+        quant_candidates=("Q8_0", "Q6_K"),
+        low_disk=True,
+    )
+
+    def fake_quantize(base, quant, out_dir, binaries, model_fp):
+        path = quantized_path(base, quant, out_dir, model_fp)
+
+        if not path.exists():
+            path.write_bytes(b"candidate")
+            created.append(quant)
+
+        assert len(list(out_dir.glob("*.gguf"))) == 1
+        return path
+
+    def fake_quality(quant, path, baseline, *args, **kwargs):
+        assert path.exists()
+        return QualityResult(
+            candidate_quant=quant,
+            perplexity=baseline * 1.01,
+            baseline_perplexity=baseline,
+            quality_loss_pct=1.0,
+        )
+
+    def fake_bench(path, ngl, ctx, target, binaries):
+        assert path.exists()
+        quant = path.stem.rsplit("-", 1)[1]
+
+        # 두 후보 모두 목표 20에 미달하며, Q8_0이 더 빠르다.
+        speed = {"Q8_0": 10.0, "Q6_K": 5.0}[quant]
+
+        return BenchResult(
+            candidate=CandidateConfig(quant=quant, ngl=ngl, ctx=ctx),
+            prompt_tok_per_sec=50.0,
+            gen_tok_per_sec=speed,
+            vram_used_mb=None,
+            raw_stdout="{}",
+        )
+
+    _patch(monkeypatch, "quantize", "quantize", fake_quantize)
+    _patch(monkeypatch, "quality", "compute_perplexity", lambda *args: 6.0)
+    _patch(monkeypatch, "quality", "evaluate_quality", fake_quality)
+    _patch(monkeypatch, "bench", "run_bench", fake_bench)
+    _patch(
+        monkeypatch, "binaries", "get_llama_cpp_version",
+        lambda binaries: "test-build",
+    )
+    _patch(
+        monkeypatch, "binaries", "list_supported_quant_types",
+        lambda binaries: ["Q8_0", "Q6_K"],
+    )
+
+    # 모든 후보가 목표에 미달하면 이 예외가 발생해야 한다.
+    with pytest.raises(NoFeasibleConfigError) as caught:
+        search(
+            target=target,
+            model_info=model,
+            hw=_hw(GPUVendor.NONE),
+            binaries=_binaries(tmp_path),
+            work_dir=out,
+            wikitext_path=tmp_path / "wiki.txt",
+            cache=None,
+        )
+
+    # 예외에 담긴 최선의 시도와 복원된 파일을 검사한다.
+    result = caught.value.closest
+    assert result is not None
+    assert result.config.quant == "Q8_0"
+    assert result.meets_target is False
+    assert result.gguf_path.exists()
+    assert list(out.glob("*.gguf")) == [result.gguf_path]
+    assert model.base_gguf_path.read_bytes() == b"base"
+
+    # 품질 측정 2회 → 속도 측정 2회 → 최선 후보 복원 1회.
+    assert created == ["Q8_0", "Q6_K", "Q8_0", "Q6_K", "Q8_0"]
+
+def test_low_disk_resume_reuses_cache(monkeypatch, tmp_path):
+    """재실행 시 측정값은 재사용하고, 사라진 최종 파일만 복원한다."""
+    from fituna.cache import ResultCache
+    from fituna.quantize import quantized_path
+
+    model = _model_info(tmp_path)
+    model.base_gguf_path.write_bytes(b"base")
+
+    out = tmp_path / "out"
+    out.mkdir()
+
+    # 캐시 키 계산에 사용할 실제 코퍼스 파일을 만든다.
+    corpus = tmp_path / "wiki.txt"
+    corpus.write_text("test corpus", encoding="utf-8")
+
+    created = []
+    target = TargetSpec(
+        model_path=model.base_gguf_path,
+        target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0,
+        quant_candidates=("Q8_0",),
+        low_disk=True,
+    )
+
+    def fake_quantize(base, quant, out_dir, binaries, model_fp):
+        path = quantized_path(base, quant, out_dir, model_fp)
+        if not path.exists():
+            path.write_bytes(b"candidate")
+            created.append(quant)
+        return path
+
+    def fake_quality(quant, path, baseline, *args, **kwargs):
+        assert path.exists()
+        return QualityResult(
+            candidate_quant=quant,
+            perplexity=baseline * 1.01,
+            baseline_perplexity=baseline,
+            quality_loss_pct=1.0,
+        )
+
+    def fake_bench(path, ngl, ctx, target, binaries):
+        assert path.exists()
+        return BenchResult(
+            candidate=CandidateConfig(quant="Q8_0", ngl=ngl, ctx=ctx),
+            prompt_tok_per_sec=50.0,
+            gen_tok_per_sec=25.0,
+            vram_used_mb=None,
+            raw_stdout="{}",
+        )
+
+    _patch(monkeypatch, "quantize", "quantize", fake_quantize)
+    _patch(monkeypatch, "quality", "compute_perplexity", lambda *args: 6.0)
+    _patch(monkeypatch, "quality", "evaluate_quality", fake_quality)
+    _patch(monkeypatch, "bench", "run_bench", fake_bench)
+    _patch(
+        monkeypatch, "binaries", "get_llama_cpp_version",
+        lambda binaries: "test-build",
+    )
+    _patch(
+        monkeypatch, "binaries", "list_supported_quant_types",
+        lambda binaries: ["Q8_0"],
+    )
+
+    cache = ResultCache(tmp_path / "cache.sqlite")
+
+    def run_search():
+        return search(
+            target=target,
+            model_info=model,
+            hw=_hw(GPUVendor.NONE),
+            binaries=_binaries(tmp_path),
+            work_dir=out,
+            wikitext_path=corpus,
+            cache=cache,
+        )
+
+    try:
+        # 첫 실행으로 측정값을 캐시에 저장한다.
+        first = run_search()
+        assert first.gguf_path.exists()
+
+        # 모델 파일만 삭제하고 측정 캐시는 유지한다.
+        first.gguf_path.unlink()
+        created.clear()
+
+        # 재실행에서 측정 함수가 호출되면 테스트를 실패시킨다.
+        def unexpected_measurement(*args, **kwargs):
+            pytest.fail("캐시가 있는데 측정을 다시 실행했습니다.")
+
+        _patch(
+            monkeypatch, "quality", "compute_perplexity",
+            unexpected_measurement,
+        )
+        _patch(
+            monkeypatch, "quality", "evaluate_quality",
+            unexpected_measurement,
+        )
+        _patch(
+            monkeypatch, "bench", "run_bench",
+            unexpected_measurement,
+        )
+
+        resumed = run_search()
+
+        assert resumed.config == first.config
+        assert resumed.quality == first.quality
+        assert resumed.bench == first.bench
+        assert resumed.gguf_path.exists()
+        assert created == ["Q8_0"]
+        assert list(out.glob("*.gguf")) == [resumed.gguf_path]
+    finally:
+        cache.close()
+

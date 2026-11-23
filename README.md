@@ -90,6 +90,7 @@ What each `fituna run` flag means:
 | `--quality-corpus wiki.txt` | Text for quality measurement — the file fetched just above | required |
 | `--out ./out` | Output/cache directory | optional (default `./out`) |
 | `--resume` | Store and reuse measurements in the cache — recommended from the first run | optional |
+| `--low-disk` | Keep at most one candidate GGUF on disk during the search (each benchmarked candidate is quantized twice) | optional |
 
 ¹ Already have a model file on disk? Use `--model <path.gguf>` instead of `--hf`.
 

@@ -675,3 +675,177 @@ def test_ppl_resume_does_not_rewrite_cached_baseline(monkeypatch, tmp_path):
         assert baseline_writes == [6.0], "cache hits must not rewrite the baseline"
     finally:
         cache.close()
+
+
+# ---------------------------------------------------------------------------
+# --low-disk mode (issue #92): at most one candidate GGUF on disk
+# ---------------------------------------------------------------------------
+
+
+def _file_creating_quantize(calls: list):
+    """A fake quantize() that writes a real file so deletions are observable,
+    and mirrors the real one's idempotent-reuse contract (an existing file
+    is served, not rewritten)."""
+
+    def fake_quantize(base_gguf: Path, quant: str, out_dir: Path, binaries: BinaryPaths, model_fp: str) -> Path:
+        calls.append(quant)
+        out = out_dir / f"model-{quant}.gguf"
+        if not out.exists():
+            out.write_bytes(b"gguf")
+        return out
+
+    return fake_quantize
+
+
+def _speed_bench(speeds: dict):
+    def fake_run_bench(gguf_path, ngl, ctx, target, binaries, timeout_sec=300):
+        quant = _quant_of(gguf_path)
+        assert gguf_path.exists(), "benchmark ran against a deleted file"
+        return BenchResult(
+            candidate=CandidateConfig(quant=quant, ngl=ngl, ctx=ctx),
+            prompt_tok_per_sec=100.0, gen_tok_per_sec=speeds[quant],
+            vram_used_mb=None, raw_stdout="{}",
+        )
+
+    return fake_run_bench
+
+
+def test_low_disk_deletes_losers_and_keeps_winner(monkeypatch, tmp_path):
+    """--low-disk: each candidate is quantized, quality-measured and deleted;
+    only its own benchmark pass re-quantizes it. A quant that misses the
+    target (early-exit B) is deleted again, and the winner's file is kept as
+    the reported artifact."""
+    target = TargetSpec(
+        model_path=tmp_path / "model.gguf",
+        target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0,
+        quant_candidates=("Q8_0", "Q4_K_M"),
+        low_disk=True,
+    )
+    quantize_calls: list = []
+    _patch_flat_quality(monkeypatch)  # both quants clear the quality gate
+    _patch(monkeypatch, "quantize", "quantize", _file_creating_quantize(quantize_calls))
+    # Q8_0 misses the target even at full offload; Q4_K_M meets it.
+    _patch(monkeypatch, "bench", "run_bench", _speed_bench({"Q8_0": 15.0, "Q4_K_M": 25.0}))
+
+    result = search(
+        target=target, model_info=_model_info(tmp_path), hw=_hw(GPUVendor.NONE),
+        binaries=_binaries(tmp_path), work_dir=tmp_path,
+        wikitext_path=tmp_path / "wiki.txt", cache=None,
+    )
+
+    assert result.meets_target and result.config.quant == "Q4_K_M"
+    assert result.gguf_path.exists(), "the winning artifact must exist on disk"
+    assert not (tmp_path / "model-Q8_0.gguf").exists(), "the losing candidate must be deleted"
+    # stage 1 measures both, stage 2 re-quantizes both for their bench pass.
+    assert quantize_calls == ["Q8_0", "Q4_K_M", "Q8_0", "Q4_K_M"]
+
+
+def test_low_disk_no_feasible_requantizes_best_effort(monkeypatch, tmp_path):
+    """--low-disk with no candidate meeting the target: the closest attempt's
+    file was deleted after its bench, so it is re-quantized at the end -- the
+    reported artifact and commands must point at a real file (issue #92,
+    step 3)."""
+    target = TargetSpec(
+        model_path=tmp_path / "model.gguf",
+        target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0,
+        quant_candidates=("Q8_0", "Q4_K_M"),
+        low_disk=True,
+    )
+    quantize_calls: list = []
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "quantize", "quantize", _file_creating_quantize(quantize_calls))
+    _patch(monkeypatch, "bench", "run_bench", _speed_bench({"Q8_0": 15.0, "Q4_K_M": 18.0}))
+
+    with pytest.raises(NoFeasibleConfigError) as excinfo:
+        search(
+            target=target, model_info=_model_info(tmp_path), hw=_hw(GPUVendor.NONE),
+            binaries=_binaries(tmp_path), work_dir=tmp_path,
+            wikitext_path=tmp_path / "wiki.txt", cache=None,
+        )
+
+    closest = excinfo.value.closest
+    assert closest is not None and closest.config.quant == "Q4_K_M"
+    assert closest.gguf_path.exists(), "best-effort artifact must be recreated"
+    assert not (tmp_path / "model-Q8_0.gguf").exists()
+    # stage 1 (2) + stage 2 (2) + the final best-effort re-quantize (1).
+    assert quantize_calls == ["Q8_0", "Q4_K_M", "Q8_0", "Q4_K_M", "Q4_K_M"]
+
+
+def test_low_disk_stage1_cache_hit_needs_no_file(monkeypatch, tmp_path):
+    """--low-disk + --resume: a cached quality result needs no file in stage
+    1, so quantize runs only for the benchmark pass itself -- and only for
+    the candidate actually benched."""
+    from fituna.cache import ResultCache
+    from fituna.model_info import model_fingerprint
+
+    quantize_calls: list = []
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "quantize", "quantize", _file_creating_quantize(quantize_calls))
+    _patch(monkeypatch, "bench", "run_bench", _speed_bench({"Q8_0": 50.0, "Q4_K_M": 50.0}))
+
+    target = TargetSpec(
+        model_path=tmp_path / "m.gguf", target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0, quant_candidates=("Q8_0", "Q4_K_M"),
+        low_disk=True,
+    )
+    model = _model_info(tmp_path)
+    wiki = tmp_path / "wiki.txt"
+    wiki.touch()
+    model_fp = model_fingerprint(model.base_gguf_path)
+    corpus_fp = model_fingerprint(wiki)
+    cache = ResultCache(tmp_path / "cache.sqlite")
+    try:
+        # Prime exactly the keys search() reads: baseline plus both quants.
+        cache.put_quality(
+            model_fp,
+            QualityResult(candidate_quant="__baseline__", perplexity=6.0,
+                          baseline_perplexity=6.0, quality_loss_pct=0.0),
+            target.ppl_chunks, corpus_fp,
+        )
+        for loss, q in ((1.0, "Q8_0"), (2.0, "Q4_K_M")):
+            cache.put_quality(
+                model_fp,
+                QualityResult(candidate_quant=q, perplexity=6.0 * (1 + loss / 100),
+                              baseline_perplexity=6.0, quality_loss_pct=loss),
+                target.ppl_chunks, corpus_fp,
+            )
+
+        result = search(target, model, _hw(GPUVendor.NONE), _binaries(tmp_path),
+                        tmp_path, wiki, cache=cache)
+
+        assert result.meets_target and result.config.quant == "Q8_0"
+        # No stage-1 quantize at all; Q8_0 wins immediately, so it is the
+        # only candidate ever materialized -- exactly once, for its bench.
+        assert quantize_calls == ["Q8_0"]
+        assert result.gguf_path.exists()
+        assert not (tmp_path / "model-Q4_K_M.gguf").exists()
+    finally:
+        cache.close()
+
+
+def test_default_mode_keeps_all_candidates(monkeypatch, tmp_path):
+    """Without --low-disk nothing is deleted: stage 1 leaves every candidate
+    on disk and stage 2 does not re-quantize (unchanged existing behavior)."""
+    target = TargetSpec(
+        model_path=tmp_path / "model.gguf",
+        target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0,
+        quant_candidates=("Q8_0", "Q4_K_M"),
+    )
+    quantize_calls: list = []
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "quantize", "quantize", _file_creating_quantize(quantize_calls))
+    _patch(monkeypatch, "bench", "run_bench", _speed_bench({"Q8_0": 50.0, "Q4_K_M": 50.0}))
+
+    result = search(
+        target=target, model_info=_model_info(tmp_path), hw=_hw(GPUVendor.NONE),
+        binaries=_binaries(tmp_path), work_dir=tmp_path,
+        wikitext_path=tmp_path / "wiki.txt", cache=None,
+    )
+
+    assert result.meets_target and result.config.quant == "Q8_0"
+    assert quantize_calls == ["Q8_0", "Q4_K_M"], "no stage-2 re-quantize in default mode"
+    assert (tmp_path / "model-Q8_0.gguf").exists()
+    assert (tmp_path / "model-Q4_K_M.gguf").exists(), "default mode must not delete candidates"

@@ -241,20 +241,54 @@ def search(
     best_effort_speed = float("-inf")
     timed_out = False
 
+    def drop_candidate(path: Optional[Path]) -> None:
+        """Delete a quantized intermediate in low-disk mode.
+
+        Only ever called on paths quantize() built inside work_dir; the
+        base GGUF is guarded explicitly so a pathological naming collision
+        can never delete the user's source model. A missing file is fine
+        (idempotent quantize() may have been satisfied by a pre-existing
+        file that a previous low-disk phase already removed).
+        """
+        if not target.low_disk or path is None or path == model_info.base_gguf_path:
+            return
+        try:
+            path.unlink()
+            progress(f"[low-disk] deleted {path.name}")
+        except FileNotFoundError:
+            pass
+
+    def requant_for_result(res: SearchResult) -> SearchResult:
+        """Low-disk: the recorded artifact was deleted after its benchmark,
+        so re-quantize just this one candidate -- the reported path and the
+        run/server commands must point at a real file. A no-op in normal
+        mode, where candidates are never deleted."""
+        if not target.low_disk:
+            return res
+        path = quantize(
+            model_info.base_gguf_path, res.config.quant, work_dir, binaries, model_fp
+        )
+        return replace(
+            res,
+            gguf_path=path,
+            run_command=build_run_command(path, res.config, binaries),
+            llama_server_command=build_server_command(path, res.config, binaries),
+        )
+
     # --- Stage 1: quantize + measure quality for every candidate, then walk
     # Stage 2 in *measured* quality order -- not the caller-supplied
     # quant_candidates order, which is only a hint and can disagree with the
     # actual measured quality_loss_pct (e.g. a build/dataset where Q6_K
     # happens to lose less than Q8_0). Trusting the input order here would
     # silently violate the "highest quality first" guarantee.
-    qualified: list[tuple[str, Path, QualityResult]] = []
+    # cand_gguf is Optional in low-disk mode: stage 1 deletes (or never
+    # writes) the file once quality is known, and stage 2 re-quantizes on
+    # demand. In normal mode it always holds the real path, as before.
+    qualified: list[tuple[str, Optional[Path], QualityResult]] = []
     for quant in quant_order:
         if not time_left():
             timed_out = True
             break
-
-        progress(f"[{quant}] quantizing")
-        cand_gguf = quantize(model_info.base_gguf_path, quant, work_dir, binaries, model_fp)
 
         quality_res = (
             cache.get_quality(
@@ -263,6 +297,18 @@ def search(
             if cache is not None
             else None
         )
+        # A cached quality result needs no file at all in low-disk mode
+        # (stage 2 re-quantizes on demand), so skip the quantize instead of
+        # writing a file only to delete it seconds later. Normal mode
+        # quantizes up front exactly as before, so the stage-2 winner's
+        # artifact is already in place.
+        cand_gguf: Optional[Path] = None
+        if quality_res is None or not target.low_disk:
+            progress(f"[{quant}] quantizing")
+            cand_gguf = quantize(
+                model_info.base_gguf_path, quant, work_dir, binaries, model_fp
+            )
+
         if quality_res is None:
             progress(f"[{quant}] evaluating quality")
             if target.quality_metric == "kld":
@@ -293,7 +339,14 @@ def search(
                 f"[{quant}] quality loss {quality_res.quality_loss_pct:.2f}% > "
                 f"{target.max_quality_loss_pct:.2f}% cap, skipping (early-exit A)"
             )
+            drop_candidate(cand_gguf)
             continue
+
+        if target.low_disk and cand_gguf is not None:
+            # Quality is now known (measured and cached): the file is not
+            # needed again until this quant's own benchmark pass.
+            drop_candidate(cand_gguf)
+            cand_gguf = None
 
         qualified.append((quant, cand_gguf, quality_res))
 
@@ -306,6 +359,16 @@ def search(
         if not time_left():
             timed_out = True
             break
+
+        if target.low_disk:
+            # Stage 1 deleted (or never wrote) this candidate: recreate it
+            # for its benchmark pass. quantize() is idempotent, so a file
+            # that survived (e.g. from a pre-flag run) is reused, and the
+            # cache keys never depended on the file in the first place.
+            progress(f"[{quant}] re-quantizing for benchmark (low-disk)")
+            cand_gguf = quantize(
+                model_info.base_gguf_path, quant, work_dir, binaries, model_fp
+            )
 
         # --- helpers closed over this iteration's quant/gguf/quality --------
         def cached_bench(ngl: int, ctx: int) -> BenchResult:
@@ -396,21 +459,25 @@ def search(
                 f"[{quant}] full-offload {top.gen_tok_per_sec:.2f} tok/s < "
                 f"target {target.target_tokens_per_sec:.2f}, skipping (early-exit B)"
             )
+            drop_candidate(cand_gguf)
             continue
 
         if not time_left():
             timed_out = True
+            drop_candidate(cand_gguf)
             break
 
         if hw.gpu_vendor == GPUVendor.NONE:
             # No GPU: ngl search doesn't apply; `top` already ran at ngl=0.
             if verify_other_ctx(0):
                 return build_result(top)
+            drop_candidate(cand_gguf)
             continue
 
         # Every ctx must hold at the chosen ngl. If even full offload misses
         # one, no smaller ngl will (monotonic assumption) -- next quant.
         if not verify_other_ctx(max_ngl):
+            drop_candidate(cand_gguf)
             if timed_out:
                 break
             continue
@@ -423,6 +490,7 @@ def search(
 
         if not time_left():
             timed_out = True
+            drop_candidate(cand_gguf)
             break
 
         # Binary search the minimal ngl in [0, max_ngl] meeting the target at
@@ -452,7 +520,7 @@ def search(
         # best-effort result (or, if nothing was ever benched, raise).
         if best_effort is not None:
             progress("time budget exceeded; returning best-effort result")
-            return best_effort
+            return requant_for_result(best_effort)
         raise NoFeasibleConfigError(
             "time budget exceeded before any candidate could be benchmarked"
         )
@@ -465,7 +533,7 @@ def search(
     raise NoFeasibleConfigError(
         "no quant/ngl/ctx combination met target_tokens_per_sec within "
         "max_quality_loss_pct",
-        closest=best_effort,
+        closest=requant_for_result(best_effort) if best_effort is not None else None,
     )
 
 

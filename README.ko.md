@@ -110,6 +110,7 @@ fituna run --hf bartowski/SmolLM2-135M-Instruct-GGUF \
 | `--quality-corpus wiki.txt` | 품질 측정용 텍스트 — 바로 위에서 받은 파일 | 필수 |
 | `--out ./out` | 산출물·캐시 저장 폴더 | 선택 (기본 `./out`) |
 | `--resume` | 측정값을 캐시에 저장·재사용 — 첫 실행부터 붙이는 것을 권장 | 선택 |
+| `--low-disk` | 탐색 중 후보 GGUF를 하나씩만 디스크에 두기(벤치마크하는 후보는 두 번 양자화) | 선택 |
 
 ¹ 이미 받아 둔 모델 파일이 있다면 `--hf` 대신 `--model <경로.gguf>`.
 

@@ -65,6 +65,12 @@ class TargetSpec:
     # or a larger value explicitly when a more rigorous evaluation is needed.
     ppl_chunks: Optional[int] = 32
     quality_metric: str = "ppl"  # "ppl" | "kld"
+    # Keep at most one quantized candidate on disk during the search: measure
+    # quality, delete the file, re-quantize only for the benchmark pass, and
+    # recreate the winner/best-effort artifact at the end. Peak disk drops
+    # from base + all candidates to base + the largest single candidate, at
+    # the cost of quantizing each benchmarked candidate twice.
+    low_disk: bool = False
 
     def __post_init__(self) -> None:
         check_target_ranges(

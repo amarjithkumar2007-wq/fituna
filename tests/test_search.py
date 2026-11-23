@@ -1194,3 +1194,64 @@ def test_low_disk_resume_does_not_rebuild_a_cached_loser(monkeypatch, tmp_path):
         assert quantize_calls == ["Q4_K_M"], "the cached loser Q8_0 must not be rebuilt"
     finally:
         cache.close()
+
+
+def test_low_disk_deletes_candidate_rejected_by_quality_gate(monkeypatch, tmp_path):
+    """--low-disk: a candidate that fails the quality cap (early-exit A) is
+    deleted right away instead of staying on disk for the rest of the run."""
+    losses = {"Q8_0": 1.0, "Q4_K_M": 10.0}
+
+    def fake_evaluate_quality(quant, quantized_gguf, baseline_ppl, wikitext_path, binaries, chunks=None):
+        return QualityResult(candidate_quant=quant, perplexity=baseline_ppl * (1 + losses[quant] / 100),
+                             baseline_perplexity=baseline_ppl, quality_loss_pct=losses[quant])
+
+    target = TargetSpec(
+        model_path=tmp_path / "model.gguf", target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0, quant_candidates=("Q8_0", "Q4_K_M"),
+        low_disk=True,
+    )
+    quantize_calls: list = []
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "quality", "evaluate_quality", fake_evaluate_quality)
+    _patch(monkeypatch, "quantize", "quantize", _file_creating_quantize(quantize_calls))
+    _patch(monkeypatch, "bench", "run_bench", _speed_bench({"Q8_0": 50.0}))
+
+    result = search(
+        target=target, model_info=_model_info(tmp_path), hw=_hw(GPUVendor.NONE),
+        binaries=_binaries(tmp_path), work_dir=tmp_path,
+        wikitext_path=tmp_path / "wiki.txt", cache=None,
+    )
+
+    assert result.config.quant == "Q8_0" and result.gguf_path.exists()
+    assert not (tmp_path / "model-Q4_K_M.gguf").exists(), "a candidate over the quality cap must be deleted"
+
+
+def test_low_disk_time_budget_recreates_best_effort(monkeypatch, tmp_path):
+    """--low-disk + max_bench_seconds: when the budget runs out, the
+    best-effort candidate was already deleted after its bench, so it is
+    re-quantized and the returned path points at a real file."""
+    import fituna.search as search_module
+
+    target = TargetSpec(
+        model_path=tmp_path / "model.gguf", target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0, quant_candidates=("Q8_0", "Q4_K_M"),
+        max_bench_seconds=10, low_disk=True,
+    )
+    quantize_calls: list = []
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "quantize", "quantize", _file_creating_quantize(quantize_calls))
+    _patch(monkeypatch, "bench", "run_bench", _speed_bench({"Q8_0": 15.0, "Q4_K_M": 15.0}))
+    # start, stage-1 Q8_0, stage-1 Q4_K_M, stage-2 Q8_0: time left;
+    # stage-2 Q4_K_M: expired.
+    clock = iter([0.0, 1.0, 2.0, 3.0])
+    monkeypatch.setattr(search_module.time, "monotonic", lambda: next(clock, 100.0))
+
+    result = search(
+        target=target, model_info=_model_info(tmp_path), hw=_hw(GPUVendor.NONE),
+        binaries=_binaries(tmp_path), work_dir=tmp_path,
+        wikitext_path=tmp_path / "wiki.txt", cache=None,
+    )
+
+    assert result.meets_target is False and result.config.quant == "Q8_0"
+    assert result.gguf_path.exists(), "the best-effort artifact must be recreated"
+    assert quantize_calls == ["Q8_0", "Q4_K_M", "Q8_0", "Q8_0"]

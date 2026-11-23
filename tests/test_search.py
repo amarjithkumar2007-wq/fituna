@@ -852,10 +852,11 @@ def test_default_mode_keeps_all_candidates(monkeypatch, tmp_path):
 
 
 def test_low_disk_keeps_one_candidate(monkeypatch, tmp_path):
-    """후보를 하나씩 처리하고, 품질이 가장 좋은 결과 파일만 남기는지 검사한다."""
+    """--low-disk: candidates are handled one at a time, and only the file of
+    the quality-first winner is left in --out."""
     from fituna.quantize import quantized_path
 
-    # 테스트용 원본 모델과 출력 폴더를 만든다.
+    # A real base model file and a separate output directory.
     model = _model_info(tmp_path)
     model.base_gguf_path.write_bytes(b"base")
 
@@ -863,8 +864,8 @@ def test_low_disk_keeps_one_candidate(monkeypatch, tmp_path):
     out.mkdir()
     created = []
 
-    # 입력 순서와 실제 품질 순서를 일부러 다르게 설정한다.
-    # 품질 손실이 작은 Q6_K가 먼저 선택되어야 한다.
+    # The input order deliberately disagrees with the measured quality:
+    # Q6_K loses less, so it must be benched first.
     losses = {"Q8_0": 2.0, "Q6_K": 1.0}
 
     target = TargetSpec(
@@ -878,13 +879,13 @@ def test_low_disk_keeps_one_candidate(monkeypatch, tmp_path):
     def fake_quantize(base, quant, out_dir, binaries, model_fp):
         path = quantized_path(base, quant, out_dir, model_fp)
 
-        # 실제 양자화 대신 작은 파일을 생성한다.
-        # 이미 존재하는 파일은 재사용한다.
+        # Write a small file instead of really quantizing;
+        # an existing file is reused, like the real quantize().
         if not path.exists():
             path.write_bytes(b"candidate")
             created.append(quant)
 
-        # 후보를 만들거나 재사용할 때마다 파일 수를 확인한다.
+        # Every create or reuse must leave exactly one candidate on disk.
         assert len(list(out_dir.glob("*.gguf"))) == 1
         return path
 
@@ -902,7 +903,7 @@ def test_low_disk_keeps_one_candidate(monkeypatch, tmp_path):
         assert path.exists()
         quant = path.stem.rsplit("-", 1)[1]
 
-        # 실제 품질이 더 좋은 Q6_K부터 속도를 측정해야 한다.
+        # Stage 2 must start with the measured-better Q6_K.
         assert quant == "Q6_K"
 
         return BenchResult(
@@ -913,7 +914,7 @@ def test_low_disk_keeps_one_candidate(monkeypatch, tmp_path):
             raw_stdout="{}",
         )
 
-    # 무거운 모델 계산을 테스트용 함수로 대체한다.
+    # Replace every heavy llama.cpp call with a fake.
     _patch(monkeypatch, "quantize", "quantize", fake_quantize)
     _patch(monkeypatch, "quality", "compute_perplexity", lambda *args: 6.0)
     _patch(monkeypatch, "quality", "evaluate_quality", fake_quality)
@@ -937,18 +938,20 @@ def test_low_disk_keeps_one_candidate(monkeypatch, tmp_path):
         cache=None,
     )
 
-    # 품질 측정용 파일 두 개와 속도 측정용 재생성 한 번.
+    # Two files for the quality pass, one re-quantize for the bench.
     assert created == ["Q8_0", "Q6_K", "Q6_K"]
 
-    # 선택 결과와 최종 파일, 원본 보존을 확인한다.
+    # The winner, its file, and an untouched base model.
     assert result.config.quant == "Q6_K"
     assert result.meets_target is True
     assert result.gguf_path.exists()
     assert list(out.glob("*.gguf")) == [result.gguf_path]
     assert model.base_gguf_path.read_bytes() == b"base"
 
+
 def test_low_disk_restores_best_effort(monkeypatch, tmp_path):
-    """모든 후보가 목표에 미달하면 가장 빨랐던 후보 파일을 복원한다."""
+    """--low-disk: when no candidate meets the target, the fastest attempt's
+    file is recreated for the best-effort result."""
     from fituna.quantize import quantized_path
 
     model = _model_info(tmp_path)
@@ -989,7 +992,7 @@ def test_low_disk_restores_best_effort(monkeypatch, tmp_path):
         assert path.exists()
         quant = path.stem.rsplit("-", 1)[1]
 
-        # 두 후보 모두 목표 20에 미달하며, Q8_0이 더 빠르다.
+        # Both miss the target of 20; Q8_0 is the faster one.
         speed = {"Q8_0": 10.0, "Q6_K": 5.0}[quant]
 
         return BenchResult(
@@ -1013,7 +1016,7 @@ def test_low_disk_restores_best_effort(monkeypatch, tmp_path):
         lambda binaries: ["Q8_0", "Q6_K"],
     )
 
-    # 모든 후보가 목표에 미달하면 이 예외가 발생해야 한다.
+    # Nothing meets the target, so search() must raise.
     with pytest.raises(NoFeasibleConfigError) as caught:
         search(
             target=target,
@@ -1025,7 +1028,7 @@ def test_low_disk_restores_best_effort(monkeypatch, tmp_path):
             cache=None,
         )
 
-    # 예외에 담긴 최선의 시도와 복원된 파일을 검사한다.
+    # The closest attempt and its recreated file.
     result = caught.value.closest
     assert result is not None
     assert result.config.quant == "Q8_0"
@@ -1034,11 +1037,13 @@ def test_low_disk_restores_best_effort(monkeypatch, tmp_path):
     assert list(out.glob("*.gguf")) == [result.gguf_path]
     assert model.base_gguf_path.read_bytes() == b"base"
 
-    # 품질 측정 2회 → 속도 측정 2회 → 최선 후보 복원 1회.
+    # 2 quality-pass files -> 2 bench re-quantizes -> 1 best-effort restore.
     assert created == ["Q8_0", "Q6_K", "Q8_0", "Q6_K", "Q8_0"]
 
+
 def test_low_disk_resume_reuses_cache(monkeypatch, tmp_path):
-    """재실행 시 측정값은 재사용하고, 사라진 최종 파일만 복원한다."""
+    """--low-disk + --resume: a rerun reuses every cached measurement and
+    only recreates the missing result file."""
     from fituna.cache import ResultCache
     from fituna.quantize import quantized_path
 
@@ -1048,7 +1053,7 @@ def test_low_disk_resume_reuses_cache(monkeypatch, tmp_path):
     out = tmp_path / "out"
     out.mkdir()
 
-    # 캐시 키 계산에 사용할 실제 코퍼스 파일을 만든다.
+    # A real corpus file, since the cache key fingerprints it.
     corpus = tmp_path / "wiki.txt"
     corpus.write_text("test corpus", encoding="utf-8")
 
@@ -1114,17 +1119,17 @@ def test_low_disk_resume_reuses_cache(monkeypatch, tmp_path):
         )
 
     try:
-        # 첫 실행으로 측정값을 캐시에 저장한다.
+        # The first run fills the cache.
         first = run_search()
         assert first.gguf_path.exists()
 
-        # 모델 파일만 삭제하고 측정 캐시는 유지한다.
+        # Delete only the result file; keep the cache.
         first.gguf_path.unlink()
         created.clear()
 
-        # 재실행에서 측정 함수가 호출되면 테스트를 실패시킨다.
+        # Any measurement on the rerun is a failure.
         def unexpected_measurement(*args, **kwargs):
-            pytest.fail("캐시가 있는데 측정을 다시 실행했습니다.")
+            pytest.fail("measured again although the cache had the result")
 
         _patch(
             monkeypatch, "quality", "compute_perplexity",

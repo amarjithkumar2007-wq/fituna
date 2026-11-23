@@ -376,15 +376,16 @@ def test_ctrl_c_is_a_one_line_notice_not_a_traceback(monkeypatch, capsys):
     assert "interrupted" in err
     assert "Traceback" not in err
 
+
 @pytest.mark.parametrize("low_disk", [False, True])
 def test_low_disk_flag_reaches_search(tmp_path, monkeypatch, low_disk):
-    """저용량 옵션의 입력 여부가 탐색 설정에 정확히 전달되는지 검사한다."""
+    """--low-disk on the command line reaches TargetSpec.low_disk."""
 
     def fake_search(*args, **kwargs):
-        # 첫 번째 인자는 탐색 설정이다.
+        # The first argument is the TargetSpec.
         assert args[0].low_disk is low_disk
 
-        # 실제 모델을 실행하는 대신 테스트용 결과를 반환한다.
+        # Return a canned result instead of running a model.
         return _fake_result(args[4])
 
     model, wikitext, out = _setup(monkeypatch, tmp_path, fake_search)

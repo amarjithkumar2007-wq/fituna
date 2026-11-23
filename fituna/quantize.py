@@ -27,8 +27,9 @@ def _model_stem(base_gguf: Path) -> str:
     stem = base_gguf.stem
     return _BASE_SUFFIX_RE.sub("", stem) or stem
 
+
 def quantized_path(base_gguf: Path, quant: str, out_dir: Path, model_fp: str) -> Path:
-    """후보 GGUF 파일을 생성하지 않고 출력 경로만 계산한다."""
+    """Return the path quantize() writes to, without creating the file."""
     return out_dir / f"{_model_stem(base_gguf)}-{model_fp[:12]}-{quant}.gguf"
 
 

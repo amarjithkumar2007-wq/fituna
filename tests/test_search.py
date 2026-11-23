@@ -1155,3 +1155,42 @@ def test_low_disk_resume_reuses_cache(monkeypatch, tmp_path):
     finally:
         cache.close()
 
+
+def test_low_disk_resume_does_not_rebuild_a_cached_loser(monkeypatch, tmp_path):
+    """--low-disk + --resume: when every bench is already cached, a candidate
+    that loses on its cached bench is never re-quantized. Only the winner is
+    rebuilt, because the result must point at a real file."""
+    from fituna.cache import ResultCache
+
+    target = TargetSpec(
+        model_path=tmp_path / "model.gguf", target_tokens_per_sec=20.0,
+        max_quality_loss_pct=5.0, quant_candidates=("Q8_0", "Q4_K_M"),
+        low_disk=True,
+    )
+    quantize_calls: list = []
+    _patch_flat_quality(monkeypatch)
+    _patch(monkeypatch, "quantize", "quantize", _file_creating_quantize(quantize_calls))
+    _patch(monkeypatch, "bench", "run_bench", _speed_bench({"Q8_0": 15.0, "Q4_K_M": 25.0}))
+    wiki = tmp_path / "wiki.txt"
+    wiki.write_text("corpus")
+    cache = ResultCache(tmp_path / "cache.sqlite")
+    # Built once: _model_info() touches the base file, and a new mtime would
+    # change the model fingerprint and miss the cache on the rerun.
+    model = _model_info(tmp_path)
+
+    def run():
+        return search(target, model, _hw(GPUVendor.NONE),
+                      _binaries(tmp_path), tmp_path, wiki, cache=cache)
+
+    try:
+        first = run()
+        assert first.config.quant == "Q4_K_M"
+        first.gguf_path.unlink()
+        quantize_calls.clear()
+
+        resumed = run()
+
+        assert resumed.config.quant == "Q4_K_M" and resumed.gguf_path.exists()
+        assert quantize_calls == ["Q4_K_M"], "the cached loser Q8_0 must not be rebuilt"
+    finally:
+        cache.close()

@@ -71,7 +71,7 @@ from fituna.config import (
 )
 from fituna.model_info import model_fingerprint
 from fituna.quality import compute_perplexity, evaluate_quality, generate_base_logits
-from fituna.quantize import quantize
+from fituna.quantize import quantize, quantized_path
 from fituna.report import build_run_command, build_server_command
 
 # Sentinel quant key used to cache the base-GGUF baseline perplexity inside
@@ -250,8 +250,15 @@ def search(
         (idempotent quantize() may have been satisfied by a pre-existing
         file that a previous low-disk phase already removed).
         """
-        if not target.low_disk or path is None or path == model_info.base_gguf_path:
+        if not target.low_disk or path is None:
             return
+        try:
+            # samefile, not ==: also catches a symlink or a differently
+            # spelled path that points at the base model.
+            if path.samefile(model_info.base_gguf_path):
+                return
+        except OSError:
+            pass  # either file missing: nothing that could alias the base
         try:
             path.unlink()
             progress(f"[low-disk] deleted {path.name}")
@@ -361,11 +368,19 @@ def search(
             break
 
         if target.low_disk:
-            # Stage 1 deleted (or never wrote) this candidate: recreate it
-            # for its benchmark pass. quantize() is idempotent, so a file
-            # that survived (e.g. from a pre-flag run) is reused, and the
-            # cache keys never depended on the file in the first place.
-            progress(f"[{quant}] re-quantizing for benchmark (low-disk)")
+            # Stage 1 deleted (or never wrote) this candidate. It is
+            # re-quantized only when a bench actually has to run, or when it
+            # becomes the result: a --resume rerun whose benches are all
+            # cached never rebuilds a candidate that goes on to lose.
+            # quantize() is idempotent, so a surviving file is reused.
+            cand_gguf = quantized_path(model_info.base_gguf_path, quant, work_dir, model_fp)
+
+        def ensure_candidate() -> None:
+            """Low-disk: make sure this iteration's candidate is on disk."""
+            nonlocal cand_gguf
+            if not target.low_disk or (cand_gguf.exists() and cand_gguf.stat().st_size > 0):
+                return
+            progress(f"[{quant}] re-quantizing (low-disk)")
             cand_gguf = quantize(
                 model_info.base_gguf_path, quant, work_dir, binaries, model_fp
             )
@@ -377,6 +392,7 @@ def search(
                 hit = cache.get_bench(model_fp, hw_fp, cand)
                 if hit is not None:
                     return hit
+            ensure_candidate()
             try:
                 res = run_bench(cand_gguf, ngl, ctx, target, binaries)
             except BenchTimeoutError:
@@ -419,6 +435,8 @@ def search(
                 )
 
         def build_result(bench: BenchResult) -> SearchResult:
+            # The winner may have been decided entirely from cached benches.
+            ensure_candidate()
             return SearchResult(
                 config=bench.candidate,
                 bench=bench,

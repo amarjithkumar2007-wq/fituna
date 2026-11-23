@@ -7,6 +7,18 @@
 
 ## [미출시]
 
+### 추가
+
+- **`--low-disk`: 탐색 중 후보 GGUF를 하나씩만 디스크에 둡니다.** 후보마다 양자화 → 품질
+  측정 → 파일 삭제를 거치고, 속도를 잴 후보만 다시 양자화합니다. 최대 디스크 사용량이
+  "원본 + 모든 후보"에서 "원본 + 가장 큰 후보 하나"로 줄고, 대신 속도를 잰 후보는 두 번
+  양자화합니다. 목표를 만족하는 후보가 없으면 가장 가까운 후보 파일을 마지막에 다시
+  만듭니다. `--resume` 캐시는 그대로 재사용되며, 옵션을 주지 않으면 동작이 바뀌지
+  않습니다([#106](https://github.com/leeyunseokarchive/fituna/pull/106), @amarjithkumar2007-wq,
+  #92). 같은 이슈를 따로 구현한 [#105](https://github.com/leeyunseokarchive/fituna/pull/105)의
+  테스트와, `--resume` 재실행 때 캐시로 이미 탈락이 확인된 후보는 다시 양자화하지 않는
+  개선을 함께 반영했습니다(@baeseongjin123).
+
 ### 문서
 
 - **Ollama 라이선스와 결합 방식 기록.** `--export-ollama`가 쓰는 Ollama `Modelfile`
